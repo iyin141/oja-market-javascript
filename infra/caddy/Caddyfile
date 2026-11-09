@@ -1,0 +1,15 @@
+:80 {
+	encode gzip
+	@api path /auth/* /me* /vendors/* /vendor/* /admin/* /products* /search* /cart* /checkout* /orders* /payments/* /flash-sales* /health /metrics /docs* /docs-json
+	handle @api {
+		reverse_proxy api:4100
+	}
+	header {
+		Access-Control-Allow-Origin {$WEB_ORIGIN:http://localhost:3100}
+		Access-Control-Allow-Credentials true
+		Access-Control-Allow-Headers "Content-Type, Authorization, Idempotency-Key"
+		Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+	}
+	@preflight method OPTIONS
+	respond @preflight 204
+}

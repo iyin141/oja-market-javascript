@@ -1,0 +1,24 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres: { image: "postgres:16-alpine", env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: oja }, ports: ["5433:5432"], options: >-
+        --health-cmd "pg_isready -U postgres" --health-interval 3s --health-retries 20 --name oja-postgres-1 }
+      redis: { image: "redis:7-alpine", ports: ["6380:6379"] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @oja/db generate && pnpm build
+      - run: pnpm test
+      - name: seed runs on a migrated DB
+        run: |
+          node tools/build-migration.mjs
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5433/oja pnpm --filter @oja/db migrate
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5433/oja pnpm --filter @oja/db seed
+      - name: secret scan
+        run: "! git grep -nE '(sk_live_|AKIA[0-9A-Z]{16}|BEGIN (RSA )?PRIVATE KEY)' -- . ':!docs'"

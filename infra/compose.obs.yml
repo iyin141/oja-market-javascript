@@ -1,0 +1,12 @@
+# docker compose -f infra/compose.yml -f infra/compose.obs.yml --profile obs up
+name: oja
+services:
+  prometheus:
+    profiles: [obs]
+    image: prom/prometheus:latest
+    volumes: [./prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["9091:9090"]
+  grafana:
+    profiles: [obs]
+    image: grafana/grafana:latest
+    ports: ["3101:3000"]

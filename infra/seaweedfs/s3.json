@@ -1,0 +1,5 @@
+{
+  "identities": [
+    { "name": "oja", "credentials": [{ "accessKey": "ojaaccess", "secretKey": "ojasecret" }], "actions": ["Admin", "Read", "Write", "List", "Tagging"] }
+  ]
+}

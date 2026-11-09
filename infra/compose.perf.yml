@@ -1,0 +1,8 @@
+# docker compose -f infra/compose.yml -f infra/compose.perf.yml --profile perf run --rm k6 run /tests/perf/checkout.js
+name: oja
+services:
+  k6:
+    profiles: [perf]
+    image: grafana/k6:latest
+    volumes: [../tests:/tests:ro]
+    environment: { API: http://api:4100 }

@@ -1,0 +1,23 @@
+const e = process.env;
+export const config = {
+  port: Number(e.PORT ?? 4100),
+  databaseUrl: e.DATABASE_URL ?? 'postgresql://oja_app:oja_app@localhost:5433/oja',
+  redisUrl: e.REDIS_URL ?? 'redis://localhost:6380',
+  jwtAccess: e.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-0123456789',
+  jwtRefresh: e.JWT_REFRESH_SECRET ?? 'dev-refresh-secret-change-me-0123456789',
+  s3: {
+    endpoint: e.S3_ENDPOINT ?? 'http://localhost:8333', region: e.S3_REGION ?? 'us-east-1',
+    accessKey: e.S3_ACCESS_KEY ?? 'ojaaccess', secretKey: e.S3_SECRET_KEY ?? 'ojasecret',
+    publicBucket: e.S3_BUCKET_PUBLIC ?? 'oja-public', privateBucket: e.S3_BUCKET_PRIVATE ?? 'oja-private',
+    forcePathStyle: (e.S3_FORCE_PATH_STYLE ?? 'true') === 'true',
+  },
+  paymentProvider: (e.PAYMENT_PROVIDER ?? 'fake') as 'paystack' | 'fake',
+  paystackSecret: e.PAYSTACK_SECRET_KEY ?? '', paystackWebhookSecret: e.PAYSTACK_WEBHOOK_SECRET ?? e.PAYSTACK_SECRET_KEY ?? '',
+  fakeSecret: e.FAKE_PROVIDER_SECRET ?? 'fake-secret',
+  smtpUrl: e.SMTP_URL ?? 'smtp://localhost:1125',
+  webOrigin: e.WEB_ORIGIN ?? 'http://localhost:3100',
+  codLimitKobo: BigInt(e.COD_LIMIT_KOBO ?? '15000000'),
+  reservationTtlMin: Number(e.RESERVATION_TTL_MIN ?? 15),
+  settlementHoldDays: Number(e.SETTLEMENT_HOLD_DAYS ?? 7),
+  authRateLimit: Number(e.AUTH_RATE_LIMIT ?? 10),
+};

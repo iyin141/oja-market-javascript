@@ -1,0 +1,55 @@
+name: oja
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: oja }
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres -d oja"], interval: 3s, timeout: 3s, retries: 20 }
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6380:6379"]
+    volumes: [redisdata:/data]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 3s, timeout: 3s, retries: 20 }
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json", "-ip.bind=0.0.0.0"]
+    ports: ["8333:8333"]
+    volumes: [swdata:/data, ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro]
+    healthcheck: { test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status >/dev/null || exit 1"], interval: 5s, timeout: 3s, retries: 20 }
+  mailpit:
+    image: axllent/mailpit:v1.20
+    ports: ["1125:1025", "8125:8025"]
+  migrate:
+    build: { context: .., dockerfile: apps/api/Dockerfile, target: migrate }
+    environment:
+      MIGRATE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/oja
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+  api: &api
+    build: { context: .., dockerfile: apps/api/Dockerfile, target: runtime }
+    env_file: [../.env]
+    environment: &apienv
+      DATABASE_URL: postgresql://oja_app:oja_app@postgres:5432/oja
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://seaweedfs:8333
+      SMTP_URL: smtp://mailpit:1025
+      PORT: "4100"
+    ports: ["4100:4100"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 5s, timeout: 3s, retries: 20 }
+  worker:
+    <<: *api
+    command: ["node", "apps/api/dist/worker.js"]
+    ports: []
+    healthcheck: { disable: true }
+  gateway:
+    image: caddy:2-alpine
+    ports: ["8100:80"]
+    volumes: [./caddy/Caddyfile:/etc/caddy/Caddyfile:ro]
+    depends_on: { api: { condition: service_healthy } }
+volumes: { pgdata: {}, redisdata: {}, swdata: {} }
