@@ -1,0 +1,56 @@
+"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
+import { useCart } from "@/lib/cart";
+import { getUser, logout, type Me } from "@/lib/session";
+import { Icon } from "./ui";
+
+const NAV: [string, string][] = [["/search", "All Categories"], ["/search?q=deal", "Today's Deals"], ["/search?sort=newest", "New Arrivals"], ["/store/lagos-gadget-hub", "Top Vendors"]];
+
+export function Masthead() {
+  const router = useRouter();
+  const { count } = useCart();
+  const [q, setQ] = useState("");
+  const [user, setUser] = useState<Me | null>(null);
+  useEffect(() => {
+    const sync = () => setUser(getUser());
+    sync();
+    window.addEventListener("oja-session", sync);
+    return () => window.removeEventListener("oja-session", sync);
+  }, []);
+  const submit = (e: FormEvent) => { e.preventDefault(); router.push(`/search?q=${encodeURIComponent(q)}`); };
+  const home = user?.role === "ADMIN" ? "/admin" : user?.role === "VENDOR" ? "/seller" : "/orders";
+  return (
+    <header className="sticky top-0 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
+      <div className="bg-surface-card flex items-center justify-between gap-space-md px-margin md:px-margin-desktop h-16">
+        <Link href="/" className="flex items-center gap-space-xs shrink-0">
+          <Icon name="storefront" className="text-secondary text-[28px]" />
+          <span className="font-headline-lg text-headline-lg text-primary tracking-tight">Oja Market</span>
+        </Link>
+        <form onSubmit={submit} role="search" className="flex-1 max-w-2xl hidden md:flex items-center bg-surface-container-low rounded-full pl-space-md pr-space-xs py-space-xs">
+          <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search products" className="w-full bg-transparent font-body-sm text-body-sm text-text-primary outline-none placeholder:text-text-secondary" placeholder="Search products, vendors, brands..." />
+          <button className="h-9 px-space-md rounded-full bg-secondary text-on-secondary flex items-center" aria-label="Search"><Icon name="search" className="text-[20px]" /></button>
+        </form>
+        <nav className="flex items-center gap-space-md">
+          {user ? (
+            <>
+              <Link href={home} className="hidden sm:flex flex-col text-left"><span className="font-caption text-caption text-text-secondary">Hello, {user.name.split(" ")[0]}</span><span className="font-label-sm text-label-sm text-text-primary">{user.role === "CUSTOMER" ? "Orders" : "Dashboard"}</span></Link>
+              <button type="button" onClick={() => logout()} className="font-label-sm text-label-sm text-text-secondary hover:text-primary">Sign out</button>
+            </>
+          ) : (
+            <Link href="/login" className="hidden sm:flex flex-col text-left"><span className="font-caption text-caption text-text-secondary">Hello, Sign in</span><span className="font-label-sm text-label-sm text-text-primary">Account</span></Link>
+          )}
+          <Link href="/cart" className="relative flex items-center rounded-full px-space-sm py-space-xs hover:bg-surface-container" aria-label={`Cart, ${count} items`}>
+            <Icon name="shopping_cart" className="text-text-primary text-[26px]" />
+            {count > 0 && <span className="absolute -top-1 left-5 h-5 min-w-[20px] px-1 rounded-full bg-tertiary-fixed-dim text-on-tertiary-fixed font-label-sm text-label-sm flex items-center justify-center">{count}</span>}
+          </Link>
+        </nav>
+      </div>
+      <div className="bg-primary-container text-on-primary px-margin md:px-margin-desktop h-10 flex items-center gap-space-lg overflow-x-auto">
+        {NAV.map(([href, label]) => <Link key={label} href={href} className="font-label-md text-label-md text-on-primary/90 hover:text-on-primary whitespace-nowrap">{label}</Link>)}
+        <Link href="/register?vendor=1" className="ml-auto flex items-center gap-space-xs font-label-md text-label-md text-tertiary-fixed-dim whitespace-nowrap"><Icon name="storefront" className="text-[18px]" />Sell on Oja Market</Link>
+      </div>
+    </header>
+  );
+}
