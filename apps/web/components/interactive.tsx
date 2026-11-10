@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { addToCart } from "@/lib/cart";
 import { btn, Icon, PriceBlock } from "./ui";
 import type { ProductDetail } from "@/lib/types";
+import { ConfirmModal } from "./Modal";
 
 export function QtyStepper({ value, onChange, max = 99, label }: { value: number; onChange: (n: number) => void; max?: number; label: string }) {
   const cls = "w-8 h-8 rounded-full bg-surface-card hover:bg-surface-container-high text-text-primary flex items-center justify-center transition-colors shadow-sm active:scale-95 disabled:opacity-40";
@@ -38,21 +39,7 @@ export function Tabs({ tabs }: { tabs: { id: string; label: string; content: Rea
 export function ConfirmDialog({ open, title, body, confirmLabel = "Confirm", danger, onConfirm, onCancel }: {
   open: boolean; title: string; body: ReactNode; confirmLabel?: string; danger?: boolean; onConfirm: () => void; onCancel: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current; if (!d) return;
-    if (open && !d.open) d.showModal(); else if (!open && d.open) d.close();
-  }, [open]);
-  return (
-    <dialog ref={ref} onClose={onCancel} className="rounded-xl p-space-lg shadow-lg max-w-md w-[90vw] backdrop:bg-primary/40 m-auto">
-      <h2 className="font-headline-md text-headline-md text-text-primary mb-space-xs">{title}</h2>
-      <div className="font-body-sm text-body-sm text-text-secondary mb-space-md">{body}</div>
-      <div className="flex justify-end gap-space-sm">
-        <button type="button" className={btn.ghost} onClick={onCancel}>Cancel</button>
-        <button type="button" className={danger ? btn.danger : btn.primary} onClick={onConfirm}>{confirmLabel}</button>
-      </div>
-    </dialog>
-  );
+  return <ConfirmModal open={open} title={title} message={body} confirmLabel={confirmLabel} tone={danger ? "danger" : "primary"} onConfirm={onConfirm} onCancel={onCancel} />;
 }
 
 /** Variant picker, quantity and add-to-cart. Stock comes from the API (`available`). */

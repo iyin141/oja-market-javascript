@@ -8,6 +8,7 @@ import { getToken } from "@/lib/session";
 import type { Order, SubOrderStatus } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { ConfirmDialog } from "./interactive";
+import { FormModal, ModalField } from "./Modal";
 import { btn, Notice, PageTitle, StatusChip, Timeline, VendorGroup } from "./ui";
 
 const FLOW: SubOrderStatus[] = ["PAID", "PACKED", "SHIPPED", "DELIVERED"];
@@ -45,17 +46,22 @@ export function OrderDetail({ id }: { id: string }) {
     catch (e) { setMsg(e instanceof Error ? e.message : "Action failed"); }
     setConfirm(null);
   }
-  async function ret(subId: string) {
-    const reason = window.prompt("Why are you returning this item?");
-    if (!reason || reason.length < 5) return;
-    try { await apiStrict(`/orders/${id}/returns`, { method: "POST", token: getToken(), body: JSON.stringify({ subOrderId: subId, reason }) }); reload(); }
-    catch (e) { setMsg(e instanceof Error ? e.message : "Return failed"); }
+  const [retFor, setRetFor] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [retErr, setRetErr] = useState("");
+  async function ret() {
+    if (!retFor || reason.trim().length < 5) { setRetErr("Please describe the problem (at least 5 characters)."); return; }
+    try { await apiStrict(`/orders/${id}/returns`, { method: "POST", token: getToken(), body: JSON.stringify({ subOrderId: retFor, reason: reason.trim() }) }); setRetErr(""); setRetFor(null); setReason(""); reload(); }
+    catch (e2) { setRetErr(e2 instanceof Error ? e2.message : "Return failed"); }
   }
   if (loading) return <p role="status" className="text-text-secondary">Loading order...</p>;
   return (
     <>
       <Notice live={live} />
       <PageTitle title={`Order ${order.id.slice(0, 8)}`} sub={`${order.paymentMethod === "COD" ? "Pay on delivery" : "Paid by card"} - total ${formatKobo(order.totalKobo)}`} actions={<StatusChip status={order.status} />} />
+      <FormModal open={!!retFor} title="Request a return" subtitle="Tell the vendor what went wrong." submitLabel="Submit return" error={retErr} onSubmit={() => void ret()} onClose={() => { setRetFor(null); setRetErr(""); }}>
+        <ModalField label="Why are you returning this item?" hint="At least 5 characters."><textarea className="modal-input" value={reason} onChange={(e) => setReason(e.target.value)} minLength={5} required /></ModalField>
+      </FormModal>
       {msg && <p role="alert" className="text-status-danger mb-space-sm">{msg}</p>}
       <div className="flex flex-col gap-space-md">
         {order.subOrders.map((s) => {
@@ -67,7 +73,7 @@ export function OrderDetail({ id }: { id: string }) {
                   <StatusChip status={s.status} />
                   <div className="flex gap-space-sm">
                     {s.status === "SHIPPED" && <button className={btn.primary} onClick={() => setConfirm({ subId: s.id, kind: "CONFIRM_DELIVERY" })}>Confirm delivery</button>}
-                    {s.status === "DELIVERED" && <button className={btn.ghost} onClick={() => ret(s.id)}>Request return</button>}
+                    {s.status === "DELIVERED" && <button className={btn.ghost} onClick={() => setRetFor(s.id)}>Request return</button>}
                     {["PAID", "PACKED", "AWAITING_COLLECTION", "PENDING_PAYMENT"].includes(s.status) && <button className={btn.ghost} onClick={() => setConfirm({ subId: s.id, kind: "CANCEL" })}>Cancel</button>}
                   </div>
                 </div>

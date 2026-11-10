@@ -6,6 +6,7 @@ import { formatKobo } from "@/lib/money";
 import { getToken } from "@/lib/session";
 import type { Balance, VendorOrderRow } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { FormModal, ModalField } from "./Modal";
 import { btn, Column, DataTable, inputCls, Notice, PageTitle, StatTile, StatusChip } from "./ui";
 
 const orderCols = (act?: (r: VendorOrderRow) => React.ReactNode): Column<VendorOrderRow>[] => [
@@ -41,18 +42,23 @@ export function SellerDashboard() {
 export function SellerOrders() {
   const { data, live, reload } = useApi<VendorOrderRow[]>("/vendor/orders", FIXTURE_VENDOR_ORDERS);
   const [err, setErr] = useState("");
-  async function ship(r: VendorOrderRow) {
-    const courier = window.prompt("Courier name (e.g. GIG, DHL)"); if (!courier) return;
-    const trackingNo = window.prompt("Tracking number"); if (!trackingNo) return;
-    try { await apiStrict(`/vendor/orders/${r.id}/ship`, { method: "POST", token: getToken(), body: JSON.stringify({ courier, trackingNo }) }); setErr(""); reload(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Could not ship"); }
+  const [shipFor, setShipFor] = useState<VendorOrderRow | null>(null);
+  const [courier, setCourier] = useState("");
+  const [trackingNo, setTrackingNo] = useState("");
+  async function ship() {
+    if (!shipFor) return;
+    try { await apiStrict(`/vendor/orders/${shipFor.id}/ship`, { method: "POST", token: getToken(), body: JSON.stringify({ courier, trackingNo }) }); setErr(""); setShipFor(null); setCourier(""); setTrackingNo(""); reload(); }
+    catch (e2) { setErr(e2 instanceof Error ? e2.message : "Could not ship"); }
   }
   return (
     <>
       <Notice live={live} />
       <PageTitle title="Orders" sub="Each order is your own sub-order; other vendors' items are not shown." />
-      {err && <p role="alert" className="text-status-danger mb-space-sm">{err}</p>}
-      <DataTable columns={orderCols((r) => ["PAID", "AWAITING_COLLECTION", "PACKED"].includes(r.status) ? <button className={btn.primary} onClick={() => ship(r)}>Ship</button> : null)} rows={data} rowKey={(r) => r.id} empty="No orders yet." />
+      <FormModal open={!!shipFor} title="Ship this order" subtitle={shipFor ? `Order ${shipFor.id.slice(0, 8)}` : undefined} submitLabel="Confirm shipment" error={err} onSubmit={() => void ship()} onClose={() => { setShipFor(null); setErr(""); }}>
+        <ModalField label="Courier"><input className="modal-input" value={courier} onChange={(e) => setCourier(e.target.value)} placeholder="e.g. GIG, DHL" minLength={2} required /></ModalField>
+        <ModalField label="Tracking number"><input className="modal-input" value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} minLength={3} required /></ModalField>
+      </FormModal>
+      <DataTable columns={orderCols((r) => ["PAID", "AWAITING_COLLECTION", "PACKED"].includes(r.status) ? <button className={btn.primary} onClick={() => setShipFor(r)}>Ship</button> : null)} rows={data} rowKey={(r) => r.id} empty="No orders yet." />
     </>
   );
 }
