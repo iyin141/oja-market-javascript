@@ -1,10 +1,22 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { apiStrict } from "@/lib/api";
-import { login, register, setSession } from "@/lib/session";
+import { getUser, login, register, setSession } from "@/lib/session";
 import { btn, Icon, inputCls } from "./ui";
+
+function PwInput(props: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative block">
+      <input {...props} className={`${inputCls} pr-10`} type={show ? "text" : "password"} />
+      <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"} className="absolute inset-y-0 right-0 px-3 flex items-center text-text-secondary hover:text-text-primary">
+        <Icon name={show ? "visibility_off" : "visibility"} className="text-[20px]" />
+      </button>
+    </span>
+  );
+}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -31,7 +43,7 @@ function LoginInner() {
     <Card title="Sign in">
       <form onSubmit={submit} className="flex flex-col gap-space-md">
         <label className="flex flex-col gap-1 font-label-sm text-label-sm">Email<input className={inputCls} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-        <label className="flex flex-col gap-1 font-label-sm text-label-sm">Password<input className={inputCls} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+        <label className="flex flex-col gap-1 font-label-sm text-label-sm">Password<PwInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
         {error && <p role="alert" className="text-status-danger font-label-md text-label-md">{error}</p>}
         <button className={btn.primary} disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
       </form>
@@ -46,10 +58,13 @@ function RegisterInner() {
   const asVendor = params.get("vendor") === "1";
   const [f, setF] = useState({ name: "", email: "", password: "", store: "" });
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => { setSignedIn(!!getUser()); }, []);
+  const existing = asVendor && signedIn; // signed-in customer opening a store: only the store name is needed
   async function submit(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
     try {
-      await register(f.name, f.email, f.password);
+      if (!existing) await register(f.name, f.email, f.password);
       if (asVendor) {
         const { getToken } = await import("@/lib/session");
         const r = await apiStrict<{ accessToken: string }>("/vendors/apply", { method: "POST", token: getToken(), body: JSON.stringify({ storeName: f.store }) });
@@ -61,10 +76,10 @@ function RegisterInner() {
   return (
     <Card title={asVendor ? "Open your store" : "Create your account"}>
       <form onSubmit={submit} className="flex flex-col gap-space-md">
-        <label className="flex flex-col gap-1 font-label-sm text-label-sm">Full name<input className={inputCls} autoComplete="name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></label>
+        {!existing && <label className="flex flex-col gap-1 font-label-sm text-label-sm">Full name<input className={inputCls} autoComplete="name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></label>}
         {asVendor && <label className="flex flex-col gap-1 font-label-sm text-label-sm">Store name<input className={inputCls} value={f.store} onChange={(e) => setF({ ...f, store: e.target.value })} minLength={2} required /></label>}
-        <label className="flex flex-col gap-1 font-label-sm text-label-sm">Email<input className={inputCls} type="email" autoComplete="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required /></label>
-        <label className="flex flex-col gap-1 font-label-sm text-label-sm">Password (8+ characters)<input className={inputCls} type="password" autoComplete="new-password" minLength={8} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required /></label>
+        {!existing && <><label className="flex flex-col gap-1 font-label-sm text-label-sm">Email<input className={inputCls} type="email" autoComplete="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required /></label>
+        <label className="flex flex-col gap-1 font-label-sm text-label-sm">Password (8+ characters)<PwInput autoComplete="new-password" minLength={8} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required /></label></>}
         {error && <p role="alert" className="text-status-danger font-label-md text-label-md">{error}</p>}
         <button className={btn.primary} disabled={busy}>{busy ? "Creating..." : asVendor ? "Apply as vendor" : "Create account"}</button>
       </form>

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Img } from "./Img";
+import { productImageKey } from "@/lib/images";
 import type { ReactNode } from "react";
 import { formatKobo, type KoboLike } from "@/lib/money";
 import type { SubOrderStatus } from "@/lib/types";
@@ -102,7 +104,7 @@ export function ProductTile({ p }: { p: { slug: string; title: string; vendorNam
         {p.image
           // eslint-disable-next-line @next/next/no-img-element
           ? <img src={p.image} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-          : <Icon name={p.icon ?? "inventory_2"} className="text-[64px] text-primary-container/40" />}
+          : <ProductPhoto title={p.title} icon={p.icon} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />}
       </div>
       <div className="flex flex-col gap-1">
         <span className="font-caption text-caption text-text-secondary">{p.vendorName}</span>
@@ -153,3 +155,10 @@ export const btn = {
   danger: "inline-flex items-center justify-center gap-space-xs px-space-md py-2 rounded-full bg-status-danger text-on-error font-label-md text-label-md hover:opacity-90 disabled:opacity-50",
 };
 export const inputCls = "w-full rounded-lg border border-border-muted bg-surface-card px-space-sm py-2 font-body-sm text-body-sm text-text-primary outline-none focus:border-secondary focus:ring-1 focus:ring-secondary";
+
+/** Picture chosen by product title (public/img/<key>.webp); icon until the file exists. */
+export function ProductPhoto({ title, icon, className }: { title: string; icon?: string; className?: string }) {
+  const key = productImageKey(title);
+  const fb = <Icon name={icon ?? "inventory_2"} className="text-[64px] text-primary-container/40" />;
+  return key ? <Img name={key} alt={title} className={className} fallback={fb} /> : fb;
+}

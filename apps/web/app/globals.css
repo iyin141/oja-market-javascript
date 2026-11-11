@@ -14,3 +14,12 @@
   letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap;
   font-feature-settings: "liga"; -webkit-font-feature-settings: "liga"; -webkit-font-smoothing: antialiased;
 }
+
+/* Minimal navigation motion: short page fade, thin route bar, small loading spinner. Off for reduced-motion users. */
+@keyframes page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes route-bar { from { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(1); opacity: 1; } to { transform: scaleX(1); opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.page-in { animation: page-in 180ms ease-out both; }
+.route-bar { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 100; transform-origin: left; background: currentColor; animation: route-bar 600ms ease-out both; pointer-events: none; }
+.mini-spinner { width: 22px; height: 22px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 9999px; animation: spin 700ms linear infinite; }
+@media (prefers-reduced-motion: reduce) { .page-in, .route-bar, .mini-spinner { animation: none; } }

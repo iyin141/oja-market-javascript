@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { BuyBox, Tabs } from "@/components/interactive";
-import { Icon, StarRating } from "@/components/ui";
+import { ProductPhoto, Icon, StarRating } from "@/components/ui";
 import { getProduct } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             {hero
               // eslint-disable-next-line @next/next/no-img-element
               ? <img src={hero} alt={p.title} className="w-full h-full object-cover" />
-              : <Icon name={p.icon ?? "inventory_2"} className="text-[120px] text-primary-container/30" />}
+              : <ProductPhoto title={p.title} icon={p.icon} className="w-full h-full object-cover" />}
           </div>
           {p.images.length > 1 && (
             <div className="flex gap-space-xs">{p.images.map((i) => (

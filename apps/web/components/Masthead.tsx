@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useCart } from "@/lib/cart";
 import { getUser, logout, type Me } from "@/lib/session";
+import { Img } from "./Img";
 import { Icon } from "./ui";
 
 const NAV: [string, string][] = [["/search", "All Categories"], ["/search?q=deal", "Today's Deals"], ["/search?sort=newest", "New Arrivals"], ["/store/lagos-gadget-hub", "Top Vendors"]];
@@ -25,7 +26,7 @@ export function Masthead() {
     <header className="sticky top-0 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
       <div className="bg-surface-card flex items-center justify-between gap-space-md px-margin md:px-margin-desktop h-16">
         <Link href="/" className="flex items-center gap-space-xs shrink-0">
-          <Icon name="storefront" className="text-secondary text-[28px]" />
+          <Img name="logo" alt="" className="h-8 w-8 rounded-md object-cover" fallback={<Icon name="storefront" className="text-secondary text-[28px]" />} />
           <span className="font-headline-lg text-headline-lg text-primary tracking-tight">Oja Market</span>
         </Link>
         <form onSubmit={submit} role="search" className="flex-1 max-w-2xl hidden md:flex items-center bg-surface-container-low rounded-full pl-space-md pr-space-xs py-space-xs">
@@ -36,7 +37,7 @@ export function Masthead() {
           {user ? (
             <>
               <Link href={home} className="hidden sm:flex flex-col text-left"><span className="font-caption text-caption text-text-secondary">Hello, {user.name.split(" ")[0]}</span><span className="font-label-sm text-label-sm text-text-primary">{user.role === "CUSTOMER" ? "Orders" : "Dashboard"}</span></Link>
-              <button type="button" onClick={() => logout()} className="font-label-sm text-label-sm text-text-secondary hover:text-primary">Sign out</button>
+              <button type="button" onClick={async () => { await logout(); router.push("/login"); }} className="font-label-sm text-label-sm text-text-secondary hover:text-primary">Sign out</button>
             </>
           ) : (
             <Link href="/login" className="hidden sm:flex flex-col text-left"><span className="font-caption text-caption text-text-secondary">Hello, Sign in</span><span className="font-label-sm text-label-sm text-text-primary">Account</span></Link>

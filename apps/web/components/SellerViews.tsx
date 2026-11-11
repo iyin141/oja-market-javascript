@@ -80,7 +80,21 @@ function InlineEdit({ value, onSave, label, format }: { value: string; onSave: (
 
 export function SellerProducts() {
   const { data, live, reload } = useApi<Prod[]>("/vendor/products", FX_PRODUCTS);
+  const cats = useApi<{ id: string; name: string }[]>("/categories", []);
   const [err, setErr] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [nf, setNf] = useState({ title: "", description: "", categoryId: "", sku: "", naira: "", stock: "1" });
+  async function addProduct() {
+    setBusy(true); setErr("");
+    try {
+      const kobo = Math.round(Number(nf.naira) * 100);
+      if (!Number.isFinite(kobo) || kobo < 1) throw new Error("Enter a price in naira");
+      await apiStrict("/vendor/products", { method: "POST", token: getToken(), body: JSON.stringify({ title: nf.title, description: nf.description, categoryId: nf.categoryId || cats.data[0]?.id, variants: [{ sku: nf.sku, priceKobo: String(kobo), stock: Number(nf.stock) }] }) });
+      setAdding(false); setNf({ title: "", description: "", categoryId: "", sku: "", naira: "", stock: "1" }); reload();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not add product"); }
+    setBusy(false);
+  }
   const patch = async (path: string, body: object) => {
     try { await apiStrict(path, { method: "PATCH", token: getToken(), body: JSON.stringify(body) }); setErr(""); reload(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Update failed"); }
@@ -90,6 +104,15 @@ export function SellerProducts() {
     <>
       <Notice live={live} />
       <PageTitle title="Products and inventory" sub="Click a price or stock level to edit it inline." />
+      <div className="mb-space-sm"><button type="button" className={btn.primary} onClick={() => { setErr(""); setAdding(true); }}>Add product</button></div>
+      <FormModal open={adding} title="Add product" subtitle="Saved as a draft. Submit it for review when ready." submitLabel="Add product" busy={busy} error={err} onSubmit={() => void addProduct()} onClose={() => { setAdding(false); setErr(""); }}>
+        <ModalField label="Title"><input className="modal-input" value={nf.title} onChange={(e) => setNf({ ...nf, title: e.target.value })} minLength={2} required /></ModalField>
+        <ModalField label="Description"><textarea className="modal-input" rows={3} value={nf.description} onChange={(e) => setNf({ ...nf, description: e.target.value })} /></ModalField>
+        <ModalField label="Category"><select className="modal-input" value={nf.categoryId || cats.data[0]?.id || ""} onChange={(e) => setNf({ ...nf, categoryId: e.target.value })}>{cats.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></ModalField>
+        <ModalField label="SKU"><input className="modal-input" value={nf.sku} onChange={(e) => setNf({ ...nf, sku: e.target.value })} required /></ModalField>
+        <ModalField label="Price (naira)"><input className="modal-input" inputMode="decimal" value={nf.naira} onChange={(e) => setNf({ ...nf, naira: e.target.value })} required /></ModalField>
+        <ModalField label="Stock"><input className="modal-input" inputMode="numeric" value={nf.stock} onChange={(e) => setNf({ ...nf, stock: e.target.value })} required /></ModalField>
+      </FormModal>
       {err && <p role="alert" className="text-status-danger mb-space-sm">{err}</p>}
       <DataTable rowKey={(r) => r.v.id} rows={rows} empty="No products yet." columns={[
         { key: "t", header: "Product", render: ({ p, v }) => <span><span className="font-label-md">{p.title}</span> <span className="text-text-secondary">{v.sku}</span></span> },
