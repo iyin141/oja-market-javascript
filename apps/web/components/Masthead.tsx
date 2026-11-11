@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useCart } from "@/lib/cart";
-import { getUser, logout, type Me } from "@/lib/session";
+import { refreshAccess } from "@/lib/api";
+import { getToken, getUser, logout, type Me } from "@/lib/session";
 import { Img } from "./Img";
 import { Icon } from "./ui";
 
@@ -17,6 +18,8 @@ export function Masthead() {
   useEffect(() => {
     const sync = () => setUser(getUser());
     sync();
+    // New tab: the access token lives per tab, so restore the session from the refresh cookie.
+    if (!getToken()) void refreshAccess();
     window.addEventListener("oja-session", sync);
     return () => window.removeEventListener("oja-session", sync);
   }, []);
