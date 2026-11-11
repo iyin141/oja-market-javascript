@@ -33,7 +33,7 @@ export function CartView() {
   return (
     <>
       <PageTitle title="Shopping cart" sub={`${count} item${count === 1 ? "" : "s"} from ${groups.length} vendor${groups.length === 1 ? "" : "s"}`} />
-      <div className="grid lg:grid-cols-[1fr_340px] gap-space-lg items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-space-lg items-start [&>*]:min-w-0">
         <div className="flex flex-col gap-space-md">
           {groups.map((g) => (
             <VendorGroup key={g.vendorId} name={g.vendorName} subtotalKobo={g.subtotal}>

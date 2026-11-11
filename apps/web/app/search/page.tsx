@@ -20,7 +20,7 @@ export default async function Search({ searchParams }: { searchParams: Promise<{
             {SORTS.map(([k, l]) => <Link key={k} href={href(k)} aria-current={sort === k} className={`px-space-sm py-1 rounded-full ${sort === k ? "bg-secondary text-on-secondary" : "bg-surface-container text-text-primary"}`}>{l}</Link>)}
           </nav>
         } />
-      <div className="grid lg:grid-cols-[260px_1fr] gap-space-lg">
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-space-lg [&>*]:min-w-0">
         <aside className="flex flex-col gap-space-md" aria-label="Filters">
           <div className="bg-surface-card rounded-xl p-space-md shadow-sm">
             <h2 className="font-title-sm text-title-sm mb-space-sm">Category</h2>

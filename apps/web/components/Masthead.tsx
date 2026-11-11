@@ -36,11 +36,15 @@ export function Masthead() {
         <nav className="flex items-center gap-space-md">
           {user ? (
             <>
+              <Link href={home} className="sm:hidden flex items-center" aria-label={user.role === "CUSTOMER" ? "Orders" : "Dashboard"}><Icon name="person" className="text-text-primary text-[26px]" /></Link>
               <Link href={home} className="hidden sm:flex flex-col text-left"><span className="font-caption text-caption text-text-secondary">Hello, {user.name.split(" ")[0]}</span><span className="font-label-sm text-label-sm text-text-primary">{user.role === "CUSTOMER" ? "Orders" : "Dashboard"}</span></Link>
               <button type="button" onClick={async () => { await logout(); router.push("/login"); }} className="font-label-sm text-label-sm text-text-secondary hover:text-primary">Sign out</button>
             </>
           ) : (
+            <>
             <Link href="/login" className="hidden sm:flex flex-col text-left"><span className="font-caption text-caption text-text-secondary">Hello, Sign in</span><span className="font-label-sm text-label-sm text-text-primary">Account</span></Link>
+            <Link href="/login" className="sm:hidden flex items-center" aria-label="Sign in"><Icon name="person" className="text-text-primary text-[26px]" /></Link>
+            </>
           )}
           <Link href="/cart" className="relative flex items-center rounded-full px-space-sm py-space-xs hover:bg-surface-container" aria-label={`Cart, ${count} items`}>
             <Icon name="shopping_cart" className="text-text-primary text-[26px]" />
@@ -48,6 +52,12 @@ export function Masthead() {
           </Link>
         </nav>
       </div>
+      <form onSubmit={submit} role="search" className="md:hidden bg-surface-card px-margin pb-space-sm">
+        <div className="flex items-center bg-surface-container-low rounded-full pl-space-md pr-space-xs py-space-xs">
+          <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search products" className="w-full min-w-0 bg-transparent font-body-sm text-body-sm text-text-primary outline-none placeholder:text-text-secondary" placeholder="Search products, vendors..." />
+          <button className="h-9 px-space-md rounded-full bg-secondary text-on-secondary flex items-center" aria-label="Search"><Icon name="search" className="text-[20px]" /></button>
+        </div>
+      </form>
       <div className="bg-primary-container text-on-primary px-margin md:px-margin-desktop h-10 flex items-center gap-space-lg overflow-x-auto">
         {NAV.map(([href, label]) => <Link key={label} href={href} className="font-label-md text-label-md text-on-primary/90 hover:text-on-primary whitespace-nowrap">{label}</Link>)}
         <Link href="/register?vendor=1" className="ml-auto flex items-center gap-space-xs font-label-md text-label-md text-tertiary-fixed-dim whitespace-nowrap"><Icon name="storefront" className="text-[18px]" />Sell on Oja Market</Link>

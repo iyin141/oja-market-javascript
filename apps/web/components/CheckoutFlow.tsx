@@ -57,10 +57,10 @@ export function CheckoutFlow() {
           </li>
         ))}
       </ol>
-      <div className="grid lg:grid-cols-[1fr_340px] gap-space-lg items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-space-lg items-start [&>*]:min-w-0">
         <div className="bg-surface-card rounded-xl p-space-md shadow-sm">
           {step === 0 && (
-            <form className="grid sm:grid-cols-2 gap-space-md" onSubmit={(e) => { e.preventDefault(); if (addrOk) setStep(1); }}>
+            <form className="grid grid-cols-1 sm:grid-cols-2 gap-space-md [&>*]:min-w-0" onSubmit={(e) => { e.preventDefault(); if (addrOk) setStep(1); }}>
               <h2 className="font-title-sm text-title-sm sm:col-span-2">Delivery address</h2>
               <label className="sm:col-span-2 flex flex-col gap-1 font-label-sm text-label-sm">Street address<input className={inputCls} value={addr.line1} onChange={(e) => setAddr({ ...addr, line1: e.target.value })} autoComplete="address-line1" required /></label>
               <label className="flex flex-col gap-1 font-label-sm text-label-sm">City<input className={inputCls} value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} autoComplete="address-level2" required /></label>

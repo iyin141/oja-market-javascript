@@ -78,7 +78,7 @@ export function OrderDetail({ id }: { id: string }) {
                   </div>
                 </div>
               }>
-              <div className="py-space-md grid md:grid-cols-[1fr_260px] gap-space-md">
+              <div className="py-space-md grid grid-cols-1 md:grid-cols-[1fr_260px] gap-space-md [&>*]:min-w-0">
                 <ul className="flex flex-col gap-space-xs">{s.items.map((i) => <li key={i.id} className="flex justify-between font-body-sm text-body-sm"><span>{i.qty} x {i.title}</span><span>{formatKobo(BigInt(i.unitPriceKobo) * BigInt(i.qty))}</span></li>)}</ul>
                 <Timeline steps={[
                   { label: "Payment received", done: at >= 0 },

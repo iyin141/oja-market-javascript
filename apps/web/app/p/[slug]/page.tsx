@@ -15,7 +15,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       <nav aria-label="Breadcrumb" className="flex items-center gap-space-xs font-caption text-caption text-text-secondary mb-space-md">
         <Link href="/">Home</Link><Icon name="chevron_right" className="text-[16px]" /><span>{p.category.name}</span><Icon name="chevron_right" className="text-[16px]" /><span className="text-text-primary">{p.title}</span>
       </nav>
-      <div className="grid lg:grid-cols-[1fr_1fr_360px] gap-space-lg">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_360px] gap-space-lg [&>*]:min-w-0">
         <div className="flex flex-col gap-space-sm lg:col-span-1">
           <div className="aspect-square rounded-xl bg-surface-container-low flex items-center justify-center overflow-hidden">
             {hero

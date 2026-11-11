@@ -12,7 +12,7 @@ export const Icon = ({ name, className = "" }: { name: string; className?: strin
 export function StarRating({ value, count }: { value: number; count?: number }) {
   const full = Math.round(value);
   return (
-    <span className="inline-flex items-center gap-1 text-status-warning font-label-sm text-label-sm" aria-label={`${value.toFixed(1)} out of 5`}>
+    <span className="inline-flex flex-wrap items-center gap-1 text-status-warning font-label-sm text-label-sm" aria-label={`${value.toFixed(1)} out of 5`}>
       {[1, 2, 3, 4, 5].map((i) => (
         <Icon key={i} name="star" className={`text-[15px] ${i <= full ? "" : "text-surface-container-highest"}`} />
       ))}
