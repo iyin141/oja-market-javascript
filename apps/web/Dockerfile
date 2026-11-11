@@ -1,4 +1,4 @@
-# Oja Market web (Next.js). Build context = repo root (oja-market-go).
+# Oja Market web (Next.js). Build context = repo root.
 # NEXT_BASE_PATH and NEXT_PUBLIC_API_URL are baked in at build time (Next inlines them).
 FROM node:22-slim AS builder
 WORKDIR /app
