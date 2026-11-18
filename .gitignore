@@ -4,3 +4,6 @@ dist
 .env
 *.tsbuildinfo
 coverage
+
+# VM storage keys (generated on the VM)
+infra/seaweedfs/s3.deploy.json

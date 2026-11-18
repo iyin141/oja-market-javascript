@@ -3,6 +3,9 @@
 # - the database is Neon (DOCKER_DATABASE_URL / DOCKER_MIGRATE_DATABASE_URL in infra/.env.deploy); postgres, elasticsearch and the caddy gateway are not started
 #   (search falls back to Postgres full text when ELASTICSEARCH_URL is empty)
 # - no host port for redis, seaweedfs and mailpit; api and web listen on 127.0.0.1 only and the host nginx publishes them under /oja-market-js and /oja-market-js-api
+# - storage: the api builds browser URLs (presigned uploads, image links) from S3_ENDPOINT, so S3_ENDPOINT is the public domain here and the host nginx
+#   routes the bucket paths (ojajs-public, ojajs-private) to SeaweedFS on 127.0.0.1:${OJA_S3_PORT}. SeaweedFS uses infra/seaweedfs/s3.deploy.json
+#   (not in git: it holds this VM's storage keys; one admin identity plus anonymous read of the public bucket only)
 # - the web app is built for the base path /oja-market-js (the compose file has no web service of its own: it is defined here)
 name: oja-js
 services:
@@ -17,7 +20,11 @@ services:
     ports: !reset []
     restart: unless-stopped
   seaweedfs:
-    ports: !reset []
+    ports: !override
+      - "127.0.0.1:${OJA_S3_PORT:-7313}:8333"
+    volumes: !override
+      - swdata:/data
+      - ./seaweedfs/s3.deploy.json:/etc/seaweedfs/s3.json:ro
     restart: unless-stopped
   mailpit:
     ports: !reset []
@@ -28,6 +35,7 @@ services:
     restart: unless-stopped
     environment:
       ELASTICSEARCH_URL: ""
+      S3_ENDPOINT: ${OJA_S3_ENDPOINT}
       WEB_ORIGIN: ${OJA_WEB_ORIGIN}
     ports: !override
       - "127.0.0.1:${OJA_API_PORT:-7312}:4100"
@@ -35,6 +43,7 @@ services:
     restart: unless-stopped
     environment:
       ELASTICSEARCH_URL: ""
+      S3_ENDPOINT: ${OJA_S3_ENDPOINT}
       WEB_ORIGIN: ${OJA_WEB_ORIGIN}
   web:
     build:
