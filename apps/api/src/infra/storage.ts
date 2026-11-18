@@ -16,6 +16,8 @@ export interface Storage {
 export class S3Storage implements Storage {
   readonly client = new S3Client({
     endpoint: config.s3.endpoint, region: config.s3.region, forcePathStyle: config.s3.forcePathStyle,
+    // SDK v3 >= 3.729 adds a CRC32 of the (empty) body to presigned PUT URLs by default; S3-compatible servers then reject the real upload (BadDigest)
+    requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
     credentials: { accessKeyId: config.s3.accessKey, secretAccessKey: config.s3.secretKey },
   });
   /** Presigned PUT is bound to content-type and content-length, expires in 5 min by default. */
