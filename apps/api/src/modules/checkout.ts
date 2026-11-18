@@ -60,7 +60,11 @@ export class CheckoutService {
     if (r.response) return r.response;
     // First request committed but has not stored its response yet: rebuild it.
     const o = await this.db.order.findUniqueOrThrow({ where: { id: r.orderId! }, include: { subOrders: true } });
-    const init = o.paymentMethod === 'CARD' ? await this.pay.initialize({ reference: o.id, amountKobo: o.totalKobo, email: user.email }) : undefined;
+    let init: { authorizationUrl: string } | undefined;
+    if (o.paymentMethod === 'CARD') {
+      try { init = await this.pay.initialize({ reference: o.id, amountKobo: o.totalKobo, email: user.email, callbackUrl: `${config.webOrigin}/orders` }); }
+      catch { throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'you were not charged; retry with the same Idempotency-Key', { orderId: o.id }); }
+    }
     return JSON.parse(JSON.stringify({
       orderId: o.id, status: o.paymentMethod === 'CARD' ? 'PENDING_PAYMENT' : 'AWAITING_COLLECTION', totalKobo: o.totalKobo, expiresAt: o.expiresAt,
       authorizationUrl: init?.authorizationUrl, subOrders: o.subOrders.map((s) => ({ id: s.id, vendorId: s.vendorId, subtotalKobo: s.subtotalKobo, commissionBps: s.commissionBps, commissionKobo: s.commissionKobo })),

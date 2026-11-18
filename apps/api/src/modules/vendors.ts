@@ -49,7 +49,11 @@ export class VendorsService {
     if (!v) throw new Problem(HttpStatus.FORBIDDEN, 'Forbidden', 'no vendor profile');
     let name: string;
     try { name = (await this.pay.resolveAccount(accountNumber, bankCode)).accountName; }
-    catch { throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'Account not found', 'the bank could not verify this account number'); }
+    catch (e: any) {
+      // 400/422 from Paystack = the bank does not know this account; anything else (401 IP not allowed, 5xx) is a gateway problem, not the vendor's typo
+      if (/ (400|422):/.test(String(e?.message))) throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'Account not found', 'the bank could not verify this account number');
+      throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'could not reach the payment service, try again shortly');
+    }
     const { recipientCode } = await this.pay.createRecipient({ name, accountNumber, bankCode });
     await this.db.vendorProfile.update({ where: { id: v.id }, data: { payoutAccountId: recipientCode } });
     return { accountName: name };

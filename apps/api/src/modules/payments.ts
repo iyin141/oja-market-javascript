@@ -78,7 +78,9 @@ export class PaymentsService {
     const p = await this.db.payment.findFirst({ where: { id: paymentId, order: { userId: user.id } } });
     if (!p) throw new NotFoundException();
     if (p.status === 'PAID') return { status: 'PAID' };
-    const v = await this.provider.verify(p.reference);
+    let v;
+    try { v = await this.provider.verify(p.reference); }
+    catch (e: any) { throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'could not reach the payment service, try again shortly'); }
     if (!v.paid) return { status: p.status };
     await this.process({ eventId: `verify:${p.reference}`, type: 'charge.success', reference: p.reference, amountKobo: p.amountKobo, feeKobo: v.feeKobo }, { source: 'verify' });
     return { status: 'PAID' };
