@@ -54,7 +54,14 @@ export class VendorsService {
       if (/ (400|422):/.test(String(e?.message))) throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'Account not found', 'the bank could not verify this account number');
       throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'could not reach the payment service, try again shortly');
     }
-    const { recipientCode } = await this.pay.createRecipient({ name, accountNumber, bankCode });
+    let recipientCode: string;
+    try { ({ recipientCode } = await this.pay.createRecipient({ name, accountNumber, bankCode })); }
+    catch (e: any) {
+      // Paystack answers 400 when the integration cannot send transfers to this recipient (transfers not enabled, bank not supported)
+      const msg = String(e?.message ?? '');
+      if (/ (400|422):/.test(msg)) throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'Payout account rejected', msg.replace(/^paystack \S+ \d+:\s*/, '') || 'the payment provider cannot pay out to this account');
+      throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'could not reach the payment service, try again shortly');
+    }
     await this.db.vendorProfile.update({ where: { id: v.id }, data: { payoutAccountId: recipientCode } });
     return { accountName: name };
   }
