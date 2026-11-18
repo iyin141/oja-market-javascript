@@ -568,7 +568,15 @@ FROM ledger_entries;
 
 -- Least-privilege application role. Dev password; override with ALTER ROLE in real deployments.
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'oja_app') THEN CREATE ROLE oja_app LOGIN PASSWORD 'oja_app'; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'oja_app') THEN
+    -- Neon's control plane rejects weak passwords (and the error cannot be caught), so there the role is created without login;
+    -- then run  ALTER ROLE oja_app LOGIN PASSWORD '<strong password>';  Everywhere else the dev password is used.
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'neon_superuser') THEN
+      CREATE ROLE oja_app NOLOGIN;
+    ELSE
+      CREATE ROLE oja_app LOGIN PASSWORD 'oja_app';
+    END IF;
+  END IF;
 END $$;
 GRANT USAGE ON SCHEMA public TO oja_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO oja_app;
