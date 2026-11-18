@@ -1,13 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiStrict } from "@/lib/api";
 import { clearCart, useCart } from "@/lib/cart";
 import { formatKobo, mulKobo } from "@/lib/money";
 import { getToken } from "@/lib/session";
 import { groupByVendor } from "./CartView";
+import { useAuth } from "@/lib/useAuth";
 import { btn, Icon, inputCls, PageTitle, VendorGroup } from "./ui";
+
+interface SavedAddress { id: string; line1: string; city: string; state: string; phone: string }
 
 const STEPS = ["Address", "Payment", "Review"] as const;
 const COD_LIMIT_KOBO = 15_000_000n;
@@ -17,6 +20,25 @@ export function CheckoutFlow() {
   const { lines, ready, totalKobo } = useCart();
   const [step, setStep] = useState(0);
   const [addr, setAddr] = useState({ line1: "", city: "", state: "", phone: "" });
+  const { user } = useAuth();
+  const [saved, setSaved] = useState<SavedAddress[]>([]);
+  const [pickedId, setPickedId] = useState(""); // "" = enter a new address
+  const [saveIt, setSaveIt] = useState(true);
+  useEffect(() => {
+    if (!user) { setSaved([]); return; }
+    let alive = true;
+    apiStrict<SavedAddress[]>("/me/addresses", { token: getToken() }).then((a) => {
+      if (!alive) return;
+      setSaved(a);
+      if (a[0]) { setPickedId(a[0].id); setAddr({ line1: a[0].line1, city: a[0].city, state: a[0].state, phone: a[0].phone }); }
+    }).catch(() => { /* saved addresses are a convenience: typing one still works */ });
+    return () => { alive = false; };
+  }, [user]);
+  function pick(id: string) {
+    setPickedId(id);
+    const a = saved.find((x) => x.id === id);
+    setAddr(a ? { line1: a.line1, city: a.city, state: a.state, phone: a.phone } : { line1: "", city: "", state: "", phone: "" });
+  }
   const [method, setMethod] = useState<"CARD" | "COD">("CARD");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -49,6 +71,7 @@ export function CheckoutFlow() {
     if (!token) { router.push("/login?next=/checkout"); return; }
     setBusy(true);
     try {
+      if (!pickedId && saveIt) await apiStrict("/me/addresses", { method: "POST", token, body: JSON.stringify(addr) }).catch(() => undefined); // never block the order on this
       await apiStrict("/cart", { method: "PUT", token, body: JSON.stringify({ items: lines.map((l) => ({ variantId: l.variantId, qty: l.qty })) }) });
       const r = await apiStrict<{ orderId: string; authorizationUrl?: string }>("/checkout", {
         method: "POST", token, headers: { "Idempotency-Key": idem.current }, body: JSON.stringify({ paymentMethod: method, address: addr, ...(applied ? { couponCode: applied.code } : {}) }),
@@ -77,10 +100,18 @@ export function CheckoutFlow() {
           {step === 0 && (
             <form className="grid grid-cols-1 sm:grid-cols-2 gap-space-md [&>*]:min-w-0" onSubmit={(e) => { e.preventDefault(); if (addrOk) setStep(1); }}>
               <h2 className="font-title-sm text-title-sm sm:col-span-2">Delivery address</h2>
+              {saved.length > 0 && (
+                <label className="sm:col-span-2 flex flex-col gap-1 font-label-sm text-label-sm">Saved addresses
+                  <select className={inputCls} value={pickedId} onChange={(e) => pick(e.target.value)}>
+                    {saved.map((a) => <option key={a.id} value={a.id}>{a.line1}, {a.city}, {a.state}</option>)}
+                    <option value="">Use a new address</option>
+                  </select></label>
+              )}
               <label className="sm:col-span-2 flex flex-col gap-1 font-label-sm text-label-sm">Street address<input className={inputCls} value={addr.line1} onChange={(e) => setAddr({ ...addr, line1: e.target.value })} autoComplete="address-line1" required /></label>
               <label className="flex flex-col gap-1 font-label-sm text-label-sm">City<input className={inputCls} value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} autoComplete="address-level2" required /></label>
               <label className="flex flex-col gap-1 font-label-sm text-label-sm">State<input className={inputCls} value={addr.state} onChange={(e) => setAddr({ ...addr, state: e.target.value })} autoComplete="address-level1" required /></label>
               <label className="sm:col-span-2 flex flex-col gap-1 font-label-sm text-label-sm">Phone<input className={inputCls} type="tel" value={addr.phone} onChange={(e) => setAddr({ ...addr, phone: e.target.value })} autoComplete="tel" required /></label>
+              {user && !pickedId && <label className="sm:col-span-2 flex items-center gap-space-xs font-label-md text-label-md"><input type="checkbox" checked={saveIt} onChange={(e) => setSaveIt(e.target.checked)} />Save this address for next time</label>}
               <div className="sm:col-span-2 flex justify-end"><button className={btn.primary} disabled={!addrOk}>Continue to payment</button></div>
             </form>
           )}

@@ -1,9 +1,10 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { RoleGuard } from "@/components/RoleGuard";
 
 const NAV: [string, string, string][] = [
   ["/seller", "Dashboard", "dashboard"], ["/seller/products", "Products", "inventory_2"], ["/seller/orders", "Orders", "receipt_long"],
-  ["/seller/payouts", "Payouts", "account_balance_wallet"], ["/seller/onboarding", "Verification", "verified_user"],
+  ["/seller/returns", "Returns", "assignment_return"], ["/seller/payouts", "Payouts", "account_balance_wallet"], ["/seller/onboarding", "Verification", "verified_user"],
 ];
 export default function SellerLayout({ children }: { children: React.ReactNode }) {
-  return <DashboardLayout title="Seller centre" nav={NAV}>{children}</DashboardLayout>;
+  return <RoleGuard roles={["VENDOR"]}><DashboardLayout title="Seller centre" nav={NAV}>{children}</DashboardLayout></RoleGuard>;
 }

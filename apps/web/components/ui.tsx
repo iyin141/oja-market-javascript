@@ -4,6 +4,7 @@ import { productImageKey } from "@/lib/images";
 import type { ReactNode } from "react";
 import { formatKobo, type KoboLike } from "@/lib/money";
 import type { SubOrderStatus } from "@/lib/types";
+import { USE_FIXTURES } from "@/lib/env";
 
 export const Icon = ({ name, className = "" }: { name: string; className?: string }) => (
   <span aria-hidden="true" className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -134,7 +135,7 @@ export function Notice({ live }: { live: boolean }) {
   if (live) return null;
   return (
     <div role="status" className="bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm px-space-md py-space-xs text-center">
-      Showing sample data: the Oja Market API is not reachable.
+      {USE_FIXTURES ? "Showing sample data: the Oja Market API is not reachable." : "Could not load this from the Oja Market API. Try again in a moment; if it keeps happening, the service may be down."}
     </div>
   );
 }

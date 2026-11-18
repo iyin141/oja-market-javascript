@@ -1,13 +1,13 @@
 "use client";
-import { useState } from "react";
-import { apiStrict } from "@/lib/api";
-import { FIXTURE_BALANCE, FIXTURE_VENDOR_ORDERS } from "@/lib/fixtures";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, apiStrict } from "@/lib/api";
+import { EMPTY_BALANCE, FIXTURE_BALANCE, FIXTURE_VENDOR_ORDERS, pick } from "@/lib/fixtures";
 import { formatKobo } from "@/lib/money";
 import { getToken } from "@/lib/session";
 import type { Balance, VendorOrderRow } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { FormModal, ModalField } from "./Modal";
-import { btn, Column, DataTable, inputCls, Notice, PageTitle, StatTile, StatusChip } from "./ui";
+import { btn, Column, DataTable, Icon, inputCls, Notice, PageTitle, StatTile, StatusChip } from "./ui";
 
 const orderCols = (act?: (r: VendorOrderRow) => React.ReactNode): Column<VendorOrderRow>[] => [
   { key: "id", header: "Order", render: (r) => <span className="font-label-md">{r.id.slice(0, 8)}</span> },
@@ -20,8 +20,8 @@ const orderCols = (act?: (r: VendorOrderRow) => React.ReactNode): Column<VendorO
 ];
 
 export function SellerDashboard() {
-  const bal = useApi<Balance>("/vendor/balance", FIXTURE_BALANCE);
-  const orders = useApi<VendorOrderRow[]>("/vendor/orders", FIXTURE_VENDOR_ORDERS);
+  const bal = useApi<Balance>("/vendor/balance", pick(EMPTY_BALANCE, FIXTURE_BALANCE));
+  const orders = useApi<VendorOrderRow[]>("/vendor/orders", pick([], FIXTURE_VENDOR_ORDERS));
   const open = orders.data.filter((o) => ["PAID", "AWAITING_COLLECTION", "PACKED"].includes(o.status)).length;
   return (
     <>
@@ -40,7 +40,7 @@ export function SellerDashboard() {
 }
 
 export function SellerOrders() {
-  const { data, live, reload } = useApi<VendorOrderRow[]>("/vendor/orders", FIXTURE_VENDOR_ORDERS);
+  const { data, live, reload } = useApi<VendorOrderRow[]>("/vendor/orders", pick([], FIXTURE_VENDOR_ORDERS));
   const [err, setErr] = useState("");
   const [shipFor, setShipFor] = useState<VendorOrderRow | null>(null);
   const [courier, setCourier] = useState("");
@@ -63,7 +63,8 @@ export function SellerOrders() {
   );
 }
 
-interface Prod { id: string; title: string; status: string; variants: { id: string; sku: string; priceKobo: string; inventory: { onHand: number; reserved: number } | null }[] }
+interface ProdImage { id: string; key: string; status: "PENDING" | "PROCESSING" | "READY" | "REJECTED" }
+interface Prod { id: string; title: string; status: string; images?: ProdImage[]; variants: { id: string; sku: string; priceKobo: string; inventory: { onHand: number; reserved: number } | null }[] }
 const FX_PRODUCTS: Prod[] = [{ id: "p1", title: "Apex Audio Pro Headphones", status: "ACTIVE", variants: [{ id: "v1", sku: "BLK", priceKobo: "8500000", inventory: { onHand: 14, reserved: 2 } }] },
   { id: "p2", title: "Wireless Earbuds", status: "DRAFT", variants: [{ id: "v2", sku: "EB-1", priceKobo: "3200000", inventory: { onHand: 3, reserved: 0 } }] }];
 
@@ -79,10 +80,11 @@ function InlineEdit({ value, onSave, label, format }: { value: string; onSave: (
 }
 
 export function SellerProducts() {
-  const { data, live, reload } = useApi<Prod[]>("/vendor/products", FX_PRODUCTS);
+  const { data, live, reload } = useApi<Prod[]>("/vendor/products", pick([], FX_PRODUCTS));
   const cats = useApi<{ id: string; name: string }[]>("/categories", []);
   const [err, setErr] = useState("");
   const [adding, setAdding] = useState(false);
+  const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [nf, setNf] = useState({ title: "", description: "", categoryId: "", sku: "", naira: "", stock: "1" });
   async function addProduct() {
@@ -95,9 +97,9 @@ export function SellerProducts() {
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not add product"); }
     setBusy(false);
   }
-  const patch = async (path: string, body: object) => {
-    try { await apiStrict(path, { method: "PATCH", token: getToken(), body: JSON.stringify(body) }); setErr(""); reload(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Update failed"); }
+  const patch = async (path: string, body: object, done?: string) => {
+    try { await apiStrict(path, { method: "PATCH", token: getToken(), body: JSON.stringify(body) }); setErr(""); setInfo(done ?? ""); reload(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Update failed"); setInfo(""); }
   };
   const rows = data.flatMap((p) => p.variants.map((v) => ({ p, v })));
   return (
@@ -114,20 +116,166 @@ export function SellerProducts() {
         <ModalField label="Stock"><input className="modal-input" inputMode="numeric" value={nf.stock} onChange={(e) => setNf({ ...nf, stock: e.target.value })} required /></ModalField>
       </FormModal>
       {err && <p role="alert" className="text-status-danger mb-space-sm">{err}</p>}
+      {info && <p role="status" className="bg-status-info/10 text-status-info rounded-lg px-space-md py-space-sm mb-space-sm font-label-md text-label-md">{info}</p>}
       <DataTable rowKey={(r) => r.v.id} rows={rows} empty="No products yet." columns={[
         { key: "t", header: "Product", render: ({ p, v }) => <span><span className="font-label-md">{p.title}</span> <span className="text-text-secondary">{v.sku}</span></span> },
-        { key: "s", header: "Status", render: ({ p }) => <StatusChip label={p.status} tone={p.status === "ACTIVE" ? "success" : p.status === "REVIEW" ? "warning" : "neutral"} /> },
+        { key: "s", header: "Status", render: ({ p }) => <div className="flex flex-col gap-1 max-w-[16rem]"><StatusChip label={STATUS[p.status]?.[0] ?? p.status} tone={p.status === "ACTIVE" ? "success" : p.status === "REVIEW" ? "warning" : "neutral"} /><span className="font-caption text-caption text-text-secondary">{STATUS[p.status]?.[1]}</span></div> },
         { key: "pr", header: "Price (kobo)", render: ({ v }) => <InlineEdit label="price in kobo" value={v.priceKobo} format={formatKobo} onSave={(x) => patch(`/vendor/variants/${v.id}`, { priceKobo: x })} /> },
         { key: "st", header: "On hand", render: ({ v }) => <InlineEdit label="stock" value={String(v.inventory?.onHand ?? 0)} onSave={(x) => patch(`/vendor/variants/${v.id}`, { stock: Number(x) })} /> },
         { key: "rs", header: "Reserved", render: ({ v }) => v.inventory?.reserved ?? 0 },
-        { key: "a", header: "", render: ({ p }) => p.status === "DRAFT" ? <button className={btn.ghost} onClick={() => patch(`/vendor/products/${p.id}`, { status: "REVIEW" })}>Submit for review</button> : null },
+        { key: "a", header: "", render: ({ p }) => p.status === "DRAFT" ? <button className={btn.ghost} onClick={() => patch(`/vendor/products/${p.id}`, { status: "REVIEW" }, `"${p.title}" is now in review. It stays hidden from shoppers until an admin approves it; its status here changes to Live once approved.`)}>Submit for review</button> : null },
       ]} />
+      <h2 className="font-title-sm text-title-sm mt-space-lg mb-space-sm">Product pictures</h2>
+      {data.length === 0 ? <p className="text-text-secondary">Add a product first.</p> : (
+        <div className="flex flex-col gap-space-sm">{data.map((p) => <ProductImages key={p.id} p={p} onChange={reload} />)}</div>
+      )}
     </>
   );
 }
 
+const STATUS: Record<string, [string, string]> = {
+  DRAFT: ["Draft", "Not visible to shoppers. Submit it for review when it is ready."],
+  REVIEW: ["In review", "Waiting for an admin. It goes live once approved, or comes back here as a draft if rejected."],
+  ACTIVE: ["Live", "Visible in the shop."],
+  ARCHIVED: ["Archived", "Hidden."],
+};
+const MEDIA = process.env.NEXT_PUBLIC_MEDIA_BASE_URL; // public image bucket URL, e.g. https://files.example.com/oja-public (no trailing slash)
+const IMG_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_IMG = 5 * 1024 * 1024;
+
+/** PUT with progress: fetch cannot report upload progress, XMLHttpRequest can. Sends exactly the headers the presigned URL was signed with. */
+function putFile(url: string, headers: Record<string, string>, file: File, onProgress: (pct: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", url);
+    for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((100 * e.loaded) / e.total)); };
+    x.onload = () => (x.status >= 200 && x.status < 300 ? resolve() : reject(new Error(`Upload failed (${x.status})`)));
+    x.onerror = () => reject(new Error("Upload failed: could not reach the file storage"));
+    x.send(file);
+  });
+}
+
+/** Image upload: presign -> browser PUT straight to object storage -> confirm (the server checks the real bytes and resizes). */
+function ProductImages({ p, onChange }: { p: Prod; onChange: () => void }) {
+  const [pct, setPct] = useState<number | null>(null);
+  const [step, setStep] = useState("");
+  const [err, setErr] = useState("");
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  async function upload(file: File) {
+    setErr("");
+    if (!IMG_TYPES.includes(file.type)) { setErr("Use a JPEG, PNG or WebP picture."); return; }
+    if (file.size > MAX_IMG) { setErr("That picture is over 5 MB. Choose a smaller one."); return; }
+    const token = getToken();
+    try {
+      setStep("Preparing upload..."); setPct(0);
+      const pre = await apiStrict<{ imageId: string; uploadUrl: string; headers: Record<string, string> }>(`/vendor/products/${p.id}/images/presign`, { method: "POST", token, body: JSON.stringify({ contentType: file.type, size: file.size, filename: file.name.slice(0, 200) }) });
+      setStep("Uploading...");
+      await putFile(pre.uploadUrl, pre.headers, file, setPct);
+      setStep("Checking the picture...");
+      await apiStrict(`/vendor/products/${p.id}/images/${pre.imageId}/confirm`, { method: "POST", token });
+      setPreviews((m) => ({ ...m, [pre.imageId]: URL.createObjectURL(file) }));
+      setStep("Uploaded. It is being resized and will appear shortly.");
+      onChange();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Upload failed"); setStep(""); }
+    setPct(null);
+  }
+  const imgs = (p.images ?? []).filter((i) => i.status !== "PENDING" || previews[i.id]);
+  return (
+    <div className="bg-surface-card rounded-xl shadow-sm p-space-md flex flex-col gap-space-sm">
+      <div className="flex flex-wrap items-center justify-between gap-space-sm">
+        <span className="font-label-md text-label-md">{p.title}</span>
+        <label className={`${btn.ghost} cursor-pointer`}>{pct === null ? "Add picture" : `Uploading ${pct}%`}
+          <input type="file" accept={IMG_TYPES.join(",")} className="sr-only" disabled={pct !== null} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} /></label>
+      </div>
+      {pct !== null && <progress className="w-full" max={100} value={pct} aria-label="Upload progress" />}
+      {step && <p role="status" className="font-caption text-caption text-text-secondary">{step}</p>}
+      {err && <p role="alert" className="text-status-danger font-label-md">{err}</p>}
+      <div className="flex flex-wrap gap-space-sm">
+        {imgs.length === 0 && <span className="font-caption text-caption text-text-secondary">No pictures yet. JPEG, PNG or WebP, up to 5 MB.</span>}
+        {imgs.map((i) => {
+          const src = previews[i.id] ?? (MEDIA && i.status === "READY" ? `${MEDIA}/${i.key.replace("raw/", "products/")}-320.webp` : null);
+          return (
+            <figure key={i.id} className="w-20 flex flex-col items-center gap-1">
+              <div className="w-20 h-20 rounded-lg bg-surface-container-low overflow-hidden flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <Icon name={i.status === "REJECTED" ? "broken_image" : "image"} className="text-[28px] text-text-secondary" />}
+              </div>
+              <figcaption className={`font-caption text-caption ${i.status === "REJECTED" ? "text-status-danger" : "text-text-secondary"}`}>{i.status === "READY" ? "Ready" : i.status === "REJECTED" ? "Rejected" : "Processing"}</figcaption>
+            </figure>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface VendorMe { payoutAccountId: string | null }
+interface Bank { name: string; code: string }
+
+/** Bank account for payouts: pick the bank, enter the 10-digit number; the API checks the account name with the bank (Paystack) before saving. */
+function BankDetails() {
+  const me = useApi<VendorMe | null>("/vendors/me", null);
+  const [banks, setBanks] = useState<Bank[] | null>(null);
+  const [banksErr, setBanksErr] = useState("");
+  const [bankCode, setBankCode] = useState("");
+  const [acct, setAcct] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [saved, setSaved] = useState("");
+  const [editing, setEditing] = useState(false);
+  const has = !!me.data?.payoutAccountId;
+  const showForm = !me.loading && (!has || editing);
+  useEffect(() => {
+    if (!showForm || banks) return; // load the bank list only when the form is shown
+    let alive = true;
+    api<Bank[]>("/vendors/banks", [], { token: getToken() }).then((r) => {
+      if (!alive) return;
+      if (r.live) setBanks(r.data);
+      else setBanksErr(r.status === 409 ? "Bank payouts are not enabled on this marketplace yet." : "Could not load the list of banks. Try again shortly.");
+    });
+    return () => { alive = false; };
+  }, [showForm, banks]);
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setErr(""); setSaved("");
+    if (!/^d{10}$/.test(acct)) { setErr("An account number has 10 digits."); return; }
+    setBusy(true);
+    try {
+      const r = await apiStrict<{ accountName: string }>("/vendors/me/paystack/recipient", { method: "POST", token: getToken(), body: JSON.stringify({ bankCode, accountNumber: acct }) });
+      setSaved(`Payout account saved: ${r.accountName}.`); setAcct(""); setEditing(false); me.reload();
+    } catch (e2) { setErr(e2 instanceof Error ? e2.message : "Could not save the account"); }
+    setBusy(false);
+  }
+  return (
+    <section className="bg-surface-card rounded-xl shadow-sm p-space-md mb-space-lg">
+      <h2 className="font-title-sm text-title-sm mb-space-xs">Payout bank account</h2>
+      {me.loading ? <p className="text-text-secondary">Loading...</p> : (
+        <p className={`font-label-md text-label-md mb-space-sm ${has ? "text-status-success" : "text-status-warning"}`}>
+          {has ? "A bank account is connected. Payouts are sent to it." : "No bank account yet. Add one to be paid out; until then payouts are only recorded in the ledger."}
+        </p>
+      )}
+      {saved && <p role="status" className="text-status-success font-label-md mb-space-sm">{saved}</p>}
+      {has && !editing && <button className={btn.ghost} onClick={() => setEditing(true)}>Change account</button>}
+      {showForm && (banksErr ? <p role="alert" className="text-status-danger font-label-md">{banksErr}</p> : (
+        <form onSubmit={submit} className="flex flex-wrap items-end gap-space-sm">
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm">Bank
+            <select className={inputCls} value={bankCode} onChange={(e) => setBankCode(e.target.value)} required disabled={!banks}>
+              <option value="">{banks ? "Choose your bank" : "Loading banks..."}</option>
+              {(banks ?? []).map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}
+            </select></label>
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm">Account number
+            <input className={inputCls} inputMode="numeric" maxLength={10} pattern="[0-9]{10}" value={acct} onChange={(e) => setAcct(e.target.value.replace(/\D/g, ""))} required /></label>
+          <button className={btn.primary} disabled={busy || !bankCode}>{busy ? "Verifying..." : "Save account"}</button>
+          {has && <button type="button" className={btn.ghost} onClick={() => setEditing(false)}>Cancel</button>}
+          {err && <p role="alert" className="basis-full text-status-danger font-label-md">{err}</p>}
+        </form>
+      ))}
+    </section>
+  );
+}
+
 export function SellerPayouts() {
-  const bal = useApi<Balance>("/vendor/balance", FIXTURE_BALANCE);
+  const bal = useApi<Balance>("/vendor/balance", pick(EMPTY_BALANCE, FIXTURE_BALANCE));
   const tx = useApi<{ id: string; account: string; direction: string; amountKobo: string; ref: string; createdAt: string }[]>("/vendor/transactions", []);
   return (
     <>
@@ -139,6 +287,7 @@ export function SellerPayouts() {
         <StatTile label="On hold" value={formatKobo(bal.data.holdKobo)} />
         <StatTile label="Paid out" value={formatKobo(bal.data.paidOutKobo)} />
       </div>
+      <BankDetails />
       <h2 className="font-title-sm text-title-sm mb-space-sm">Ledger activity</h2>
       <DataTable rowKey={(r) => r.id} rows={tx.data} empty="No ledger activity yet." columns={[
         { key: "d", header: "Date", render: (r) => new Date(r.createdAt).toLocaleString() },

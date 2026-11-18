@@ -52,6 +52,7 @@ services:
       args:
         NEXT_BASE_PATH: ${OJA_BASE_PATH:-/oja-market-js}
         NEXT_PUBLIC_API_URL: ${OJA_PUBLIC_API_URL}
+        NEXT_PUBLIC_MEDIA_BASE_URL: ${OJA_MEDIA_BASE_URL:-}
     environment:
       NEXT_BASE_PATH: ${OJA_BASE_PATH:-/oja-market-js}
     restart: unless-stopped

@@ -1,23 +1,54 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { API_URL, apiStrict } from "@/lib/api";
-import { FIXTURE_ORDERS } from "@/lib/fixtures";
+import { FIXTURE_ORDERS, pick } from "@/lib/fixtures";
 import { formatKobo } from "@/lib/money";
 import { getToken } from "@/lib/session";
 import type { Order, SubOrderStatus } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/useAuth";
 import { ConfirmDialog } from "./interactive";
 import { FormModal, ModalField } from "./Modal";
-import { btn, Notice, PageTitle, StatusChip, Timeline, VendorGroup } from "./ui";
+import { SignInPrompt } from "./RoleGuard";
+import { btn, Icon, Notice, PageTitle, StatusChip, Timeline, VendorGroup } from "./ui";
 
 const FLOW: SubOrderStatus[] = ["PAID", "PACKED", "SHIPPED", "DELIVERED"];
 
+type PayState = { kind: "checking" } | { kind: "PAID"; orderId: string } | { kind: "PENDING"; orderId: string } | { kind: "FAILED"; orderId: string } | { kind: "error"; message: string };
+
+/** Result of the payment the customer just made. Paystack sends them back to /orders?reference=...; the API asks Paystack and updates the order. */
+export function PaymentResult({ reference, onDone }: { reference: string; onDone: () => void }) {
+  const [s, setS] = useState<PayState>({ kind: "checking" });
+  const check = useCallback(async () => {
+    setS({ kind: "checking" });
+    try {
+      const r = await apiStrict<{ status: "PAID" | "PENDING" | "FAILED"; orderId: string }>("/payments/paystack/verify", { method: "POST", token: getToken(), body: JSON.stringify({ reference }) });
+      setS({ kind: r.status, orderId: r.orderId });
+      onDone();
+    } catch (e) { setS({ kind: "error", message: e instanceof Error ? e.message : "Could not check the payment" }); }
+  }, [reference, onDone]);
+  useEffect(() => { void check(); }, [check]);
+  const box = "rounded-xl p-space-md mb-space-md flex flex-wrap items-center gap-space-sm";
+  if (s.kind === "checking") return <p role="status" className={`${box} bg-surface-card text-text-secondary`}>Checking your payment...</p>;
+  if (s.kind === "PAID") return <div role="status" className={`${box} bg-status-success/10 text-status-success`}><Icon name="check_circle" /><span className="font-label-md">Payment received. Thank you, your order is confirmed.</span><Link href={`/orders/${s.orderId}`} className={btn.primary}>View order</Link></div>;
+  if (s.kind === "PENDING") return <div role="status" className={`${box} bg-status-warning/10 text-status-warning`}><Icon name="hourglass_top" /><span className="font-label-md">Your payment is still being confirmed. This can take a minute.</span><button className={btn.ghost} onClick={() => void check()}>Check again</button></div>;
+  if (s.kind === "FAILED") return <div role="alert" className={`${box} bg-status-danger/10 text-status-danger`}><Icon name="error" /><span className="font-label-md">The payment did not go through, so you were not charged for this order.</span><Link href="/checkout" className={btn.ghost}>Try again</Link></div>;
+  return <div role="alert" className={`${box} bg-status-danger/10 text-status-danger`}><Icon name="error" /><span className="font-label-md">{s.message}</span><button className={btn.ghost} onClick={() => void check()}>Check again</button></div>;
+}
+
 export function OrdersList() {
-  const { data, live, loading } = useApi<Order[]>("/orders", FIXTURE_ORDERS);
+  const params = useSearchParams();
+  const reference = params.get("reference") ?? params.get("trxref");
+  const { user, ready } = useAuth();
+  const { data, live, loading, reload } = useApi<Order[]>("/orders", pick([], FIXTURE_ORDERS));
+  if (!ready) return <p role="status" className="text-text-secondary">Loading...</p>;
+  if (!user) return <SignInPrompt next={reference ? `/orders?reference=${encodeURIComponent(reference)}` : "/orders"} text="Sign in to see your orders." />;
   return (
     <>
       <Notice live={live} />
+      {reference && <PaymentResult reference={reference} onDone={reload} />}
       <PageTitle title="Your orders" sub="One checkout can ship from several vendors." />
       {loading ? <p role="status" className="text-text-secondary">Loading orders...</p> : (
         <div className="flex flex-col gap-space-md">
@@ -37,7 +68,8 @@ export function OrdersList() {
 }
 
 export function OrderDetail({ id }: { id: string }) {
-  const { data: order, live, loading, reload } = useApi<Order>(`/orders/${id}`, FIXTURE_ORDERS.find((o) => o.id === id) ?? FIXTURE_ORDERS[0]);
+  const { user, ready } = useAuth();
+  const { data: order, live, loading, status, reload } = useApi<Order | null>(`/orders/${id}`, pick(null, FIXTURE_ORDERS.find((o) => o.id === id) ?? null));
   const [confirm, setConfirm] = useState<{ subId: string; kind: "CONFIRM_DELIVERY" | "CANCEL" } | null>(null);
   const [msg, setMsg] = useState("");
   async function act() {
@@ -64,7 +96,18 @@ export function OrderDetail({ id }: { id: string }) {
     try { await apiStrict(`/orders/${id}/returns`, { method: "POST", token: getToken(), body: JSON.stringify({ subOrderId: retFor, reason: reason.trim() }) }); setRetErr(""); setRetFor(null); setReason(""); reload(); }
     catch (e2) { setRetErr(e2 instanceof Error ? e2.message : "Return failed"); }
   }
-  if (loading) return <p role="status" className="text-text-secondary">Loading order...</p>;
+  if (!ready || loading) return <p role="status" className="text-text-secondary">Loading order...</p>;
+  if (!user) return <SignInPrompt next={`/orders/${id}`} text="Sign in to see this order." />;
+  if (!order) {
+    return (
+      <div role="alert" className="max-w-md mx-auto bg-surface-card rounded-xl shadow-sm p-space-lg text-center flex flex-col items-center gap-space-sm">
+        <Icon name="search_off" className="text-[40px] text-text-secondary" />
+        <h1 className="font-headline-md text-headline-md">{status === 404 ? "Order not found" : "Order could not be loaded"}</h1>
+        <p className="font-body-sm text-body-sm text-text-secondary">{status === 404 ? "This order does not exist or belongs to another account." : "Something went wrong while loading this order. Please try again."}</p>
+        <Link href="/orders" className={btn.primary}>Back to your orders</Link>
+      </div>
+    );
+  }
   return (
     <>
       <Notice live={live} />

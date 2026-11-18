@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { BuyBox, Tabs } from "@/components/interactive";
 import { ProductPhoto, Icon, StarRating } from "@/components/ui";
+import { Reviews } from "@/components/Reviews";
 import { getProduct } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { data: p, live } = await getProduct(slug);
+  if (!p) return <Shell live={live}><p role="alert" className="bg-surface-card rounded-xl p-space-xl text-center text-text-secondary">This product could not be loaded right now. Please try again shortly.</p></Shell>;
   const hero = p.images[0]?.url ?? p.image;
   return (
     <Shell live={live}>
@@ -39,7 +41,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <Tabs tabs={[
               { id: "about", label: "About this item", content: <p className="font-body-md text-body-md text-text-primary whitespace-pre-line">{p.description || "No description yet."}</p> },
               { id: "ship", label: "Shipping & returns", content: <p className="font-body-sm text-body-sm text-text-secondary">Ships from the vendor. Returns accepted within 7 days of delivery; the vendor has 48 hours to respond before a refund is issued automatically.</p> },
-              { id: "reviews", label: `Reviews (${p.ratingCount})`, content: <p className="font-body-sm text-body-sm text-text-secondary">Only verified buyers with a delivered order can review this product.</p> },
+              { id: "reviews", label: `Reviews (${p.ratingCount})`, content: <Reviews productId={p.id} path={`/p/${p.slug}`} /> },
             ]} />
           </div>
         </div>

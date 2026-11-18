@@ -3,18 +3,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useCart } from "@/lib/cart";
-import { refreshAccess } from "@/lib/api";
+import { getProducts, refreshAccess } from "@/lib/api";
 import { getToken, getUser, logout, type Me } from "@/lib/session";
 import { Img } from "./Img";
 import { Icon } from "./ui";
 
-const NAV: [string, string][] = [["/search", "All Categories"], ["/search?q=deal", "Today's Deals"], ["/search?sort=newest", "New Arrivals"], ["/store/lagos-gadget-hub", "Top Vendors"]];
+const NAV: [string, string][] = [["/search", "All Products"], ["/search?sort=rating", "Best Rated"], ["/search?sort=newest", "New Arrivals"]];
+
+/** First vendor that really has listed products, looked up once per page load (null when the API has none or is down). */
+let topVendor: Promise<{ slug: string; name: string } | null> | undefined;
+const loadTopVendor = () => (topVendor ??= getProducts().then((r) => (r.live && r.data[0] ? { slug: r.data[0].vendorSlug, name: r.data[0].vendorName } : null)).catch(() => null));
 
 export function Masthead() {
   const router = useRouter();
   const { count } = useCart();
   const [q, setQ] = useState("");
   const [user, setUser] = useState<Me | null>(null);
+  const [top, setTop] = useState<{ slug: string; name: string } | null>(null);
+  useEffect(() => { void loadTopVendor().then(setTop); }, []);
   useEffect(() => {
     const sync = () => setUser(getUser());
     sync();
@@ -24,7 +30,7 @@ export function Masthead() {
     return () => window.removeEventListener("oja-session", sync);
   }, []);
   const submit = (e: FormEvent) => { e.preventDefault(); router.push(`/search?q=${encodeURIComponent(q)}`); };
-  const home = user?.role === "ADMIN" ? "/admin" : user?.role === "VENDOR" ? "/seller" : "/orders";
+  const home = user?.role === "ADMIN" ? "/admin" : user?.role === "VENDOR" ? "/seller" : user?.role === "AGENT" ? "/agent" : "/orders";
   return (
     <header className="sticky top-0 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
       <div className="bg-surface-card flex items-center justify-between gap-space-md px-margin md:px-margin-desktop h-16">
@@ -62,7 +68,7 @@ export function Masthead() {
         </div>
       </form>
       <div className="bg-primary-container text-on-primary px-margin md:px-margin-desktop h-10 flex items-center gap-space-lg overflow-x-auto">
-        {NAV.map(([href, label]) => <Link key={label} href={href} className="font-label-md text-label-md text-on-primary/90 hover:text-on-primary whitespace-nowrap">{label}</Link>)}
+        {[...NAV, ...(top ? [[`/store/${top.slug}`, `Shop ${top.name}`] as [string, string]] : [])].map(([href, label]) => <Link key={label} href={href} className="font-label-md text-label-md text-on-primary/90 hover:text-on-primary whitespace-nowrap">{label}</Link>)}
         <Link href="/register?vendor=1" className="ml-auto flex items-center gap-space-xs font-label-md text-label-md text-tertiary-fixed-dim whitespace-nowrap"><Icon name="storefront" className="text-[18px]" />Sell on Oja Market</Link>
       </div>
     </header>

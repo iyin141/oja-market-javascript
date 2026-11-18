@@ -36,7 +36,8 @@ function LoginInner() {
     e.preventDefault(); setBusy(true); setError("");
     try {
       const u = await login(email, password);
-      router.push(params.get("next") ?? (u.role === "ADMIN" ? "/admin" : u.role === "VENDOR" ? "/seller" : "/orders"));
+      const next = params.get("next"); // only same-site paths: a "//host" or "https://" value would be an open redirect
+      router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : u.role === "ADMIN" ? "/admin" : u.role === "VENDOR" ? "/seller" : u.role === "AGENT" ? "/agent" : "/orders");
     } catch (err) { setError(err instanceof Error ? err.message : "Sign in failed"); setBusy(false); }
   }
   return (
@@ -44,6 +45,7 @@ function LoginInner() {
       <form onSubmit={submit} className="flex flex-col gap-space-md">
         <label className="flex flex-col gap-1 font-label-sm text-label-sm">Email<input className={inputCls} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
         <label className="flex flex-col gap-1 font-label-sm text-label-sm">Password<PwInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+        <Link href="/forgot-password" className="self-end font-label-sm text-label-sm text-secondary">Forgot password?</Link>
         {error && <p role="alert" className="text-status-danger font-label-md text-label-md">{error}</p>}
         <button className={btn.primary} disabled={busy}>{busy ? "Signing in..." : "Sign in"}</button>
       </form>
@@ -88,3 +90,58 @@ function RegisterInner() {
   );
 }
 export const RegisterForm = () => <Suspense><RegisterInner /></Suspense>;
+
+function ForgotInner() {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError("");
+    try { await apiStrict("/auth/forgot", { method: "POST", body: JSON.stringify({ email }) }); setSent(true); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not send the email"); }
+    setBusy(false);
+  }
+  return (
+    <Card title="Forgot your password?">
+      {sent ? <p role="status" className="font-body-sm text-body-sm text-text-primary">If an account exists for {email}, we have sent a link to reset the password. It may take a few minutes to arrive.</p> : (
+        <form onSubmit={submit} className="flex flex-col gap-space-md">
+          <p className="font-body-sm text-body-sm text-text-secondary">Enter your email and we will send you a reset link.</p>
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm">Email<input className={inputCls} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+          {error && <p role="alert" className="text-status-danger font-label-md text-label-md">{error}</p>}
+          <button className={btn.primary} disabled={busy}>{busy ? "Sending..." : "Send reset link"}</button>
+        </form>
+      )}
+      <p className="font-body-sm text-body-sm text-text-secondary"><Link href="/login" className="text-secondary font-semibold">Back to sign in</Link></p>
+    </Card>
+  );
+}
+export const ForgotForm = () => <Suspense><ForgotInner /></Suspense>;
+
+function ResetInner() {
+  const token = useSearchParams().get("token") ?? "";
+  const [password, setPassword] = useState(""); const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false); const [done, setDone] = useState(false); const [error, setError] = useState("");
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setError("");
+    if (password !== again) { setError("The two passwords do not match."); return; }
+    setBusy(true);
+    try { await apiStrict("/auth/reset", { method: "POST", body: JSON.stringify({ token, password }) }); setDone(true); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not reset the password"); }
+    setBusy(false);
+  }
+  if (!token) return <Card title="Reset link problem"><p role="alert" className="text-status-danger">This reset link is missing its token. Request a new one.</p><Link href="/forgot-password" className={btn.primary}>Request a new link</Link></Card>;
+  return (
+    <Card title="Choose a new password">
+      {done ? <><p role="status" className="text-status-success font-label-md">Your password was changed.</p><Link href="/login" className={btn.primary}>Sign in</Link></> : (
+        <form onSubmit={submit} className="flex flex-col gap-space-md">
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm">New password (8+ characters)<PwInput autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm">Repeat new password<PwInput autoComplete="new-password" minLength={8} value={again} onChange={(e) => setAgain(e.target.value)} required /></label>
+          {error && <p role="alert" className="text-status-danger font-label-md text-label-md">{error} {/expired|invalid/i.test(error) && <Link href="/forgot-password" className="underline">Request a new link</Link>}</p>}
+          <button className={btn.primary} disabled={busy}>{busy ? "Saving..." : "Change password"}</button>
+        </form>
+      )}
+    </Card>
+  );
+}
+export const ResetForm = () => <Suspense><ResetInner /></Suspense>;

@@ -1,4 +1,5 @@
 import type { Balance, Kpis, Order, ProductDetail, ProductSummary, SearchResult, VendorOrderRow } from "./types";
+import { USE_FIXTURES } from "./env";
 
 const V = [
   { id: "v1", name: "Lagos Gadget Hub", slug: "lagos-gadget-hub" },
@@ -64,3 +65,13 @@ export const FIXTURE_KPIS: Kpis = {
   gmvKobo: "482500000", paidSubOrders: 128, commissionKobo: "41200000", refundedKobo: "3200000",
   pendingVendors: 3, pendingProducts: 7, openDisputes: 2, flaggedVendors: 1, ledger: { ok: true, totalDebits: "1250000000", totalCredits: "1250000000" },
 };
+
+/** Neutral values served when the API fails and fixtures are off: honest empties, never invented numbers. */
+export const EMPTY_KPIS: Kpis = {
+  gmvKobo: "0", paidSubOrders: 0, commissionKobo: "0", refundedKobo: "0", pendingVendors: 0, pendingProducts: 0, openDisputes: 0, flaggedVendors: 0,
+  ledger: { ok: true, totalDebits: "0", totalCredits: "0" },
+};
+export const EMPTY_BALANCE: Balance = { pendingKobo: "0", availableKobo: "0", holdKobo: "0", paidOutKobo: "0" };
+export const EMPTY_SEARCH: SearchResult = { total: 0, items: [], facets: { categories: [], vendors: [], price: { min: null, max: null } } };
+/** Fixture when NEXT_PUBLIC_USE_FIXTURES=1, otherwise the empty value. */
+export const pick = <T,>(empty: T, fixture: T): T => (USE_FIXTURES ? fixture : empty);

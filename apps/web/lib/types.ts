@@ -18,3 +18,5 @@ export interface Order { id: string; status: SubOrderStatus | "MIXED"; totalKobo
 export interface VendorOrderRow { id: string; status: SubOrderStatus; subtotalKobo: string; createdAt: string; items: { title: string; qty: number }[]; order: { user: { name: string }; paymentMethod: string } }
 export interface Balance { pendingKobo: string; availableKobo: string; holdKobo: string; paidOutKobo: string }
 export interface Kpis { gmvKobo: string; paidSubOrders: number; commissionKobo: string; refundedKobo: string; pendingVendors: number; pendingProducts: number; openDisputes: number; flaggedVendors: number; ledger: { ok: boolean; totalDebits: string; totalCredits: string } }
+export interface Category { id: string; name: string; slug: string }
+export interface Review { id: string; rating: number; title?: string | null; body: string; authorName: string; createdAt: string }
