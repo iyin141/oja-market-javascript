@@ -59,6 +59,13 @@ packages/shared, packages/payment-provider
 infra         docker compose (+ observability and k6 profiles)
 ```
 
+### Environment for a hosted deploy
+
+- `WEB_ORIGIN`: the plain browser origin (CORS). `WEB_BASE_URL`: that origin plus the base path (e.g. `https://host/oja-market-js`), used for the Paystack return address and the password-reset link. If unset it falls back to `WEB_ORIGIN`.
+- `S3_ENDPOINT` must be reachable from the browser (presigned uploads and image links are built from it).
+- Web build arguments: `NEXT_BASE_PATH`, `NEXT_PUBLIC_API_URL`, optional `NEXT_PUBLIC_MEDIA_BASE_URL` (public bucket URL for seller thumbnails), `NEXT_PUBLIC_USE_FIXTURES=1` (demo mode with sample data).
+- With `NODE_ENV=production` the API will not start with default JWT secrets, the fake provider, or Paystack without a secret key. See `docs/architecture.md` ("Deployed under a subpath").
+
 ### Paystack setup
 
 1. Paystack dashboard (test mode) > Settings > API Keys & Webhooks: copy the secret key, set the test webhook URL to `https://<api host>/payments/webhook`.
