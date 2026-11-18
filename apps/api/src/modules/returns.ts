@@ -1,10 +1,10 @@
-import { Body, Controller, Get, HttpStatus, Inject, Injectable, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Inject, Injectable, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { Prisma_, Tx } from '../infra/prisma';
 import { Jobs } from '../infra/jobs';
 import { JOBS } from '../tokens';
 import { config } from '../config';
-import { AuthUser, CurrentUser, Roles } from '../common/auth';
+import { AuthUser, CurrentUser, Public, Roles } from '../common/auth';
 import { Problem, Z } from '../common/http';
 import { LedgerService } from './ledger';
 import { OrdersService } from './orders';
@@ -119,6 +119,14 @@ export class ReturnsService {
   mine(u: AuthUser) { return this.db.returnRequest.findMany({ where: { userId: u.id }, orderBy: { createdAt: 'desc' } }); }
 }
 
+/** "Ada Obi" -> "Ada O."; never the email, never the full surname. */
+export function displayName(name: string | null | undefined): string {
+  const [first, ...rest] = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!first) return 'Customer';
+  const last = rest[rest.length - 1];
+  return last ? `${first} ${last[0].toUpperCase()}.` : first;
+}
+
 @Injectable()
 export class ReviewsService {
   constructor(private db: Prisma_) {}
@@ -133,7 +141,11 @@ export class ReviewsService {
       return { ok: true };
     });
   }
-  list(productId: string) { return this.db.review.findMany({ where: { productId }, orderBy: { createdAt: 'desc' }, take: 50, include: { user: { select: { name: true } } } }); }
+  async list(productId: string, limit = 20) {
+    if (!/^[0-9a-f-]{36}$/i.test(productId)) return [];
+    const rows = await this.db.review.findMany({ where: { productId }, orderBy: { createdAt: 'desc' }, take: Math.min(Math.max(limit, 1), 50), include: { user: { select: { name: true } } } });
+    return rows.map((r) => ({ id: r.id, rating: r.rating, body: r.body, authorName: displayName(r.user.name), createdAt: r.createdAt }));
+  }
 }
 
 @Controller()
@@ -149,6 +161,8 @@ export class ReturnsController {
   @Roles('ADMIN') @Post('admin/disputes/:id/decide')
   decide(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(Z(z.object({ decision: z.enum(['REFUND', 'REJECT']) }))) b: any) { return this.r.adminDecide(u, id, b.decision); }
 
+  @Public() @Get('products/:id/reviews')
+  reviews(@Param('id') id: string, @Query(Z(z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) }))) q: any) { return this.rev.list(id, q.limit); }
   @Roles('CUSTOMER', 'VENDOR', 'ADMIN') @Post('products/:id/reviews')
   review(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(Z(z.object({ rating: z.number().int().min(1).max(5), body: z.string().max(2000).default('') }))) b: any) { return this.rev.create(u, id, b.rating, b.body); }
 }

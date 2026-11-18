@@ -58,7 +58,7 @@ describe('providers', () => {
       expect((await p.initialize({ reference: 'ord-1', amountKobo: 250000n, email: 'a@b.c' })).authorizationUrl).toContain('checkout.paystack.com');
       expect(calls[0].url).toBe('https://api.paystack.co/transaction/initialize');
       expect(calls[0].body).toMatchObject({ amount: 250000, currency: 'NGN', reference: 'ord-1' }); // number, not string
-      expect(await p.verify('ord-1')).toEqual({ paid: true, amountKobo: 250000n, feeKobo: 4000n });
+      expect(await p.verify('ord-1')).toEqual({ paid: true, failed: false, amountKobo: 250000n, feeKobo: 4000n });
       expect(calls[1].url).toBe('https://api.paystack.co/transaction/verify/ord-1');
       expect((await p.resolveAccount('0123456789', '058')).accountName).toBe('ADA OBI');
       expect(calls[2].url).toBe('https://api.paystack.co/bank/resolve?account_number=0123456789&bank_code=058');

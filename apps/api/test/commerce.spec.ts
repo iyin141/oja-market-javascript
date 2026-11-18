@@ -211,10 +211,15 @@ describe('payments + ledger', () => {
         expect(await h.app.get(OrdersService).settleDue()).toBeGreaterThanOrEqual(1);
         expect(await bal()).toMatchObject({ pendingKobo: '0', availableKobo: '900000' });
         const key = 'run-' + randomUUID();
-        const p1 = await request(h.server).post('/admin/payouts/run').set(bearer(admin.token)).send({ runKey: key }).expect(201);
-        const p2 = await request(h.server).post('/admin/payouts/run').set(bearer(admin.token)).send({ runKey: key }).expect(201);
-        expect(BigInt(p1.body.totalKobo)).toBeGreaterThanOrEqual(900000n);
-        expect(p2.body.vendorsPaid).toBe(0);
+        // no payout recipient: skipped, not settled in the ledger
+        const p0 = await request(h.server).post('/admin/payouts/run').set(bearer(admin.token)).send({ runKey: key + '-none' }).expect(200);
+        expect(p0.body.skipped).toEqual(expect.arrayContaining([expect.objectContaining({ vendorId: o.v.vendor.id, reason: 'no payout recipient' })]));
+        expect(await bal()).toMatchObject({ availableKobo: '900000', paidOutKobo: '0' });
+        await h.db.vendorProfile.update({ where: { id: o.v.vendor.id }, data: { payoutAccountId: 'RCP_test' } });
+        const p1 = await request(h.server).post('/admin/payouts/run').set(bearer(admin.token)).send({ runKey: key }).expect(200);
+        const p2 = await request(h.server).post('/admin/payouts/run').set(bearer(admin.token)).send({ runKey: key }).expect(200);
+        expect(p1.body.paid).toEqual(expect.arrayContaining([expect.objectContaining({ vendorId: o.v.vendor.id, amountKobo: '900000' })]));
+        expect(p2.body.paid).toEqual([]);
         expect(await bal()).toMatchObject({ availableKobo: '0', paidOutKobo: '900000' });
       } else {
         expect(after).toMatchObject({ pendingKobo: '0', holdKobo: '0', availableKobo: '0' });

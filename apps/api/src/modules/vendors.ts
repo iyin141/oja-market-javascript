@@ -9,7 +9,7 @@ import type IORedis from 'ioredis';
 import { JOBS, PAYMENT, REDIS, STORAGE } from '../tokens';
 import { PaystackProvider, StripeProvider, type PaymentProvider } from '@oja/payment-provider';
 import { config } from '../config';
-import { AuthUser, CurrentUser, Roles, signAccess } from '../common/auth';
+import { AuthUser, CurrentUser, Public, Roles, signAccess } from '../common/auth';
 import { Problem, Z } from '../common/http';
 
 const KYC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
@@ -30,7 +30,7 @@ export class VendorsService {
       accountId = (await this.pay.createConnectedAccount(user.email)).accountId;
       await this.db.vendorProfile.update({ where: { id: v.id }, data: { payoutAccountId: accountId } });
     }
-    return this.pay.onboardingLink(accountId, `${config.webOrigin}/seller`);
+    return this.pay.onboardingLink(accountId, `${config.webBaseUrl}/seller`);
   }
 
   /** Banks the vendor can be paid into (Paystack /bank). */
@@ -83,6 +83,9 @@ export class VendorsService {
     return v;
   }
 
+  /** Home page: active (approved, not suspended) stores only. */
+  publicList() { return this.db.vendorProfile.findMany({ where: { status: 'APPROVED' }, select: { id: true, slug: true, storeName: true }, orderBy: { storeName: 'asc' }, take: 200 }); }
+
   me(userId: string) { return this.mineOrFail(userId); }
 
   /** Step 1 (no docKey): presigned PUT into the PRIVATE bucket. Step 2 (docKey): verify object, move to KYC_SUBMITTED. */
@@ -126,6 +129,7 @@ export class VendorsService {
 @Controller()
 export class VendorsController {
   constructor(private v: VendorsService) {}
+  @Public() @Get('vendors') publicList() { return this.v.publicList(); }
   @Post('vendors/apply') apply(@CurrentUser() u: AuthUser, @Body(Z(z.object({ storeName: z.string().min(2).max(80) }))) b: any) { return this.v.apply(u, b.storeName); }
   @Roles('VENDOR') @Get('vendors/banks') banks() { return this.v.banks(); }
   @Roles('VENDOR') @Post('vendors/me/paystack/recipient')

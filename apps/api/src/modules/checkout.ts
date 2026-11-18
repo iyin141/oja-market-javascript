@@ -14,6 +14,9 @@ import { EFFECTIVE_PRICE_SQL } from './catalog';
 import { CouponService } from './coupons';
 import { CartService } from './cart';
 
+/** Where Paystack sends the customer back: the web app orders page, which verifies the reference. */
+export const paymentCallbackUrl = (reference: string, base = config.webBaseUrl) => `${base.replace(/\/+$/, '')}/orders?reference=${encodeURIComponent(reference)}`;
+
 interface CartLine { variant_id: string; qty: number; price: bigint; product_id: string; title: string; vendor_id: string; vendor_status: string; vendor_flagged: boolean; category_id: string; product_status: string }
 
 @Injectable()
@@ -40,7 +43,7 @@ export class CheckoutService {
     if (!created.cod) {
       await this.jobs.releaseReservation(created.orderId, config.reservationTtlMin * 60_000);
       try {
-        authorizationUrl = (await this.pay.initialize({ reference: created.orderId, amountKobo: created.total, email: user.email, callbackUrl: `${config.webOrigin}/orders` })).authorizationUrl;
+        authorizationUrl = (await this.pay.initialize({ reference: created.orderId, amountKobo: created.total, email: user.email, callbackUrl: paymentCallbackUrl(created.orderId) })).authorizationUrl;
       } catch (e: any) {
         // The order and stock reservation are committed and expire by themselves; the same Idempotency-Key retries payment setup.
         throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'you were not charged; retry with the same Idempotency-Key', { orderId: created.orderId });
@@ -62,7 +65,7 @@ export class CheckoutService {
     const o = await this.db.order.findUniqueOrThrow({ where: { id: r.orderId! }, include: { subOrders: true } });
     let init: { authorizationUrl: string } | undefined;
     if (o.paymentMethod === 'CARD') {
-      try { init = await this.pay.initialize({ reference: o.id, amountKobo: o.totalKobo, email: user.email, callbackUrl: `${config.webOrigin}/orders` }); }
+      try { init = await this.pay.initialize({ reference: o.id, amountKobo: o.totalKobo, email: user.email, callbackUrl: paymentCallbackUrl(o.id) }); }
       catch { throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'you were not charged; retry with the same Idempotency-Key', { orderId: o.id }); }
     }
     return JSON.parse(JSON.stringify({

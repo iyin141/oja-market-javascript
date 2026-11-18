@@ -9,7 +9,7 @@ export interface PaymentProvider {
   initialize(a: { reference: string; amountKobo: bigint; email: string; callbackUrl?: string }): Promise<InitResult>;
   /** Verify signature over the RAW body (constant-time), then parse. null if invalid. */
   parseWebhook(rawBody: Buffer, signature: string | undefined): WebhookEvent | null;
-  verify(reference: string): Promise<{ paid: boolean; amountKobo: bigint; feeKobo: bigint }>;
+  verify(reference: string): Promise<{ paid: boolean; amountKobo: bigint; feeKobo: bigint; failed?: boolean }>;
   /** Optional marketplace split: move a vendor's net earnings to their connected account. Idempotent per key. */
   transferToVendor?(a: { accountId: string; amountKobo: bigint; idempotencyKey: string; description?: string }): Promise<{ transferId: string }>;
 }
@@ -70,7 +70,7 @@ export class PaystackProvider implements PaymentProvider {
   }
   async verify(reference: string) {
     const j = await this.call('/transaction/verify/' + encodeURIComponent(reference));
-    return { paid: j.data.status === 'success', amountKobo: BigInt(j.data.amount), feeKobo: BigInt(j.data.fees ?? 0) };
+    return { paid: j.data.status === 'success', failed: ['failed', 'reversed'].includes(j.data.status), amountKobo: BigInt(j.data.amount), feeKobo: BigInt(j.data.fees ?? 0) };
   }
   /** Banks that can receive transfers, for the vendor payout form. */
   async listBanks(country = 'nigeria') {
@@ -109,6 +109,7 @@ export class FakeProvider implements PaymentProvider {
     return { eventId: String(j.data.id), type: j.event, reference: j.data.reference, amountKobo: BigInt(j.data.amount), feeKobo: BigInt(j.data.fees) };
   }
   async verify() { return { paid: true, amountKobo: 0n, feeKobo: 0n }; }
+  async transferToVendor(a: { idempotencyKey: string }) { return { transferId: `fake-${a.idempotencyKey}` }; }
   /** Test/dev helper: build a signed charge.success delivery. */
   buildChargeSuccess(a: { eventId: string; reference: string; amountKobo: bigint }) {
     const body = Buffer.from(JSON.stringify({

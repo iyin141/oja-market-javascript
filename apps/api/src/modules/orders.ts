@@ -75,6 +75,14 @@ export class OrdersService {
     });
   }
 
+  /** Delivery queue for agents/admins: everything shipped and not yet delivered (there is no per-agent assignment in the schema). */
+  agentQueue() {
+    return this.db.subOrder.findMany({
+      where: { status: 'SHIPPED' }, orderBy: { shippedAt: 'asc' }, take: 100,
+      include: { items: true, vendor: { select: { storeName: true } }, order: { select: { address: true, paymentMethod: true, user: { select: { name: true } } } } },
+    });
+  }
+
   async ship(userId: string, subOrderId: string, courier: string, trackingNo: string) {
     const v = await this.vendorOf(userId);
     const so = await this.db.subOrder.findFirst({ where: { id: subOrderId, vendorId: v.id }, include: { order: true } });
@@ -181,6 +189,7 @@ export class OrdersController {
   @Roles('VENDOR') @Post('vendor/orders/:id/ship')
   ship(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(Z(z.object({ courier: z.string().min(2).max(60), trackingNo: z.string().min(3).max(60) }))) b: any) { return this.o.ship(u.id, id, b.courier, b.trackingNo); }
 
+  @Roles('AGENT', 'ADMIN') @Get('agent/sub-orders') agentQueue() { return this.o.agentQueue(); }
   @Roles('AGENT', 'ADMIN') @Post('agent/sub-orders/:id/deliver')
   deliver(@Param('id') id: string, @Body(Z(z.object({ cashCollected: z.boolean().default(false) }))) b: any) { return this.o.agentDeliver(id, b.cashCollected); }
 }

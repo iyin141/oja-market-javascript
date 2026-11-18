@@ -100,8 +100,10 @@ export class CatalogService {
     return { ok: true };
   }
 
-  mine(userId: string) {
-    return this.db.product.findMany({ where: { vendor: { userId } }, include: { variants: { include: { inventory: true } }, images: true }, orderBy: { createdAt: 'desc' } });
+  async mine(userId: string) {
+    const rows = await this.db.product.findMany({ where: { vendor: { userId } }, include: { variants: { include: { inventory: true } }, images: { orderBy: { position: 'asc' } } }, orderBy: { createdAt: 'desc' } });
+    // READY images carry their public URLs (same shape as GET /products/:id); others only have a status.
+    return rows.map((p) => ({ ...p, images: p.images.map((i) => i.status === 'READY' ? { ...i, url: publicUrl(i.key.replace('raw/', 'products/') + '-1200.webp'), thumb: publicUrl(i.key.replace('raw/', 'products/') + '-320.webp') } : i) }));
   }
 
   async presign(userId: string, productId: string, dto: z.infer<typeof presignSchema>) {
@@ -186,13 +188,13 @@ export class CatalogController {
     ]);
     return { ok: true };
   }
-  @Roles('ADMIN') @Post('admin/products/:id/reject') async reject(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+  @Roles('ADMIN') @Post('admin/products/:id/reject') async reject(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() body?: { note?: string }) {
     const p = await this.db.product.findUnique({ where: { id } });
     if (!p) throw new Problem(404, 'Not Found');
     if (!canProductTransition(p.status, 'DRAFT')) throw new Problem(409, 'Illegal transition', `${p.status} -> DRAFT`);
     await this.db.$transaction([
       this.db.product.update({ where: { id }, data: { status: 'DRAFT' } }),
-      this.db.auditLog.create({ data: { actorId: u.id, action: 'product.reject', entity: 'product', entityId: id } }),
+      this.db.auditLog.create({ data: { actorId: u.id, action: 'product.reject', entity: 'product', entityId: id, meta: { note: String(body?.note ?? '').slice(0, 500) } } }),
     ]);
     return { ok: true };
   }

@@ -9,7 +9,7 @@ import { Roles } from '../common/auth';
 
 const q = z.object({
   q: z.string().max(100).default(''), categoryId: z.string().uuid().optional(), vendorId: z.string().uuid().optional(),
-  minPrice: z.coerce.bigint().optional(), maxPrice: z.coerce.bigint().optional(), inStock: z.coerce.boolean().optional(),
+  minPrice: z.coerce.bigint().optional(), maxPrice: z.coerce.bigint().optional(), inStock: z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1').optional(),
   sort: z.enum(['relevance', 'price_asc', 'price_desc', 'rating', 'newest']).default('relevance'),
   page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(60).default(24),
 });

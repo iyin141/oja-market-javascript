@@ -54,7 +54,7 @@ export class PaymentsService {
     if (!pending.length) {
       // Reservation already expired: money is real, so book it as a refund liability instead of dropping it.
       await this.ledger.postLatePayment(tx, `payment:${ev.reference}`, ev.amountKobo);
-      await tx.auditLog.create({ data: { action: 'payment.late_refund_required', entity: 'order', entityId: order.id } });
+      await tx.auditLog.create({ data: { action: 'payment.late_refund_required', entity: 'order', entityId: order.id, meta: { reference: ev.reference, amountKobo: ev.amountKobo.toString(), note: 'paid after the reservation expired; refund the customer' } } });
       return { status: 'late' };
     }
     // Processing fee split across sub-orders by subtotal; last one takes the rounding remainder.
@@ -73,17 +73,33 @@ export class PaymentsService {
     return { status: 'posted' };
   }
 
-  /** Manual re-check with the gateway (webhook lost / delayed). Same code path and idempotency key as the webhook. */
+  /** Manual re-check by payment id. Same path as verifyByReference. */
   async verify(user: AuthUser, paymentId: string) {
     const p = await this.db.payment.findFirst({ where: { id: paymentId, order: { userId: user.id } } });
     if (!p) throw new NotFoundException();
-    if (p.status === 'PAID') return { status: 'PAID' };
+    return this.recheck(p);
+  }
+
+  /** Return-from-Paystack check: the reference is the payment reference (= order id), owned by the caller. */
+  async verifyByReference(user: AuthUser, reference: string) {
+    const p = await this.db.payment.findFirst({ where: { reference, order: { userId: user.id } } });
+    if (!p) throw new NotFoundException();
+    return this.recheck(p);
+  }
+
+  /** Ask the gateway, then run the webhook's own handler (same payment_events key `verify:<ref>`, so a late webhook or a second call cannot double-post). */
+  private async recheck(p: { id: string; orderId: string; reference: string; status: string; amountKobo: bigint }): Promise<{ status: 'PAID' | 'PENDING' | 'FAILED'; orderId: string }> {
+    const orderId = p.orderId;
+    if (p.status === 'PAID') return { status: 'PAID', orderId };
     let v;
     try { v = await this.provider.verify(p.reference); }
     catch (e: any) { throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'could not reach the payment service, try again shortly'); }
-    if (!v.paid) return { status: p.status };
-    await this.process({ eventId: `verify:${p.reference}`, type: 'charge.success', reference: p.reference, amountKobo: p.amountKobo, feeKobo: v.feeKobo }, { source: 'verify' });
-    return { status: 'PAID' };
+    if (!v.paid) return { status: v.failed || p.status === 'FAILED' ? 'FAILED' : 'PENDING', orderId };
+    // Real gateways report the charged amount: a mismatch is caught (and audited) by the handler. The fake provider reports 0.
+    const amountKobo = this.provider instanceof FakeProvider ? p.amountKobo : v.amountKobo;
+    await this.process({ eventId: `verify:${p.reference}`, type: 'charge.success', reference: p.reference, amountKobo, feeKobo: v.feeKobo }, { source: 'verify' });
+    const after = await this.db.payment.findUnique({ where: { id: p.id } });
+    return { status: after?.status === 'PAID' ? 'PAID' : 'PENDING', orderId };
   }
 
   /** Dev/test only: stands in for the hosted payment page by delivering a signed webhook to ourselves. */
@@ -104,6 +120,8 @@ export class PaymentsController {
   webhook(@Req() req: RawBodyRequest<any>, @Headers('x-paystack-signature') sig?: string, @Headers('stripe-signature') stripeSig?: string) {
     return this.p.handleWebhook(req.rawBody ?? Buffer.alloc(0), stripeSig ?? sig);
   }
+  @Roles('CUSTOMER', 'VENDOR', 'ADMIN') @HttpCode(200) @Post('paystack/verify')
+  verifyPaystack(@CurrentUser() u: AuthUser, @Body(Z(z.object({ reference: z.string().min(1).max(100) }))) b: any) { return this.p.verifyByReference(u, b.reference); }
   @Roles('CUSTOMER', 'VENDOR', 'ADMIN') @HttpCode(200) @Post(':id/verify')
   verify(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.p.verify(u, id); }
   @Roles('CUSTOMER', 'VENDOR', 'ADMIN') @HttpCode(200) @Post('fake/charge')
