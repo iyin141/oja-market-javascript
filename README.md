@@ -28,7 +28,7 @@ Payments default to a fake provider (a signed webhook is delivered to the API fo
 | 3 | Vendor onboarding, product CRUD, image upload to S3 | `modules/vendors.ts`, `catalog.ts`, `images.ts` (presigned PUT, magic-byte check, sharp resize) | Done |
 | 4 | Search with filters and sorting through Elasticsearch | `modules/search-es.ts` (index + query, facets, fuzzy, prefix). Falls back to Postgres full-text if `ELASTICSEARCH_URL` is empty or ES is down | Code and unit tests done; see note 1 |
 | 5 | Cart, checkout, order lifecycle (placed, packed, shipped, delivered), Redis for cart/session caching | `cart.ts`, `checkout.ts`, `orders.ts`. Redis: read-through cart cache (30 s, dropped on every cart write and on checkout), `/me` session-profile cache (60 s), plus rate limiting, BullMQ jobs and SSE pub/sub | Done; see note 2 |
-| 6 | Stripe Connect (or Razorpay) test mode for split payments and commissions | `packages/payment-provider` `StripeProvider` (Checkout Session, signed webhook, Express connected accounts, transfers at payout). Paystack and a fake provider sit behind the same port | Code and unit tests done; not run against Stripe, see note 3 |
+| 6 | Paystack or Stripe Connect test mode for split payments and commissions | `packages/payment-provider` `StripeProvider` (Checkout Session, signed webhook, Express connected accounts, transfers at payout). `PaystackProvider` (initialize, verify, transfer recipients and transfers for vendor payouts, bank list and account resolve) and a fake provider sit behind the same port | Code and unit tests done; not run against Stripe, see note 3 |
 | 7a | Reviews | `returns.ts` `ReviewsService`: verified buyers only, one per product, rating aggregate | Done |
 | 7b | Coupons | `modules/coupons.ts`: percent or fixed, minimum spend, expiry, max uses (atomic), vendor-funded pro rata so ledger and refunds stay consistent | Done |
 | 7c | PDF invoices | `modules/invoices.ts`: `GET /orders/:id/invoice`, dependency-free PDF writer | Done |
@@ -58,3 +58,10 @@ packages/db   Prisma schema, migrations, seed
 packages/shared, packages/payment-provider
 infra         docker compose (+ observability and k6 profiles)
 ```
+
+### Paystack setup
+
+1. Paystack dashboard (test mode) > Settings > API Keys & Webhooks: copy the secret key, set the test webhook URL to `https://<api host>/payments/webhook`.
+2. `.env`: `PAYMENT_PROVIDER=paystack`, `PAYSTACK_SECRET_KEY=sk_test_...`, `PAYSTACK_WEBHOOK_SECRET=` (same value), `PAYSTACK_CURRENCY=NGN`.
+3. Customer pays on Paystack's hosted page; the signed `charge.success` webhook (`x-paystack-signature`, HMAC-SHA512) posts the payment. `POST /payments/:id/verify` re-checks with `GET /transaction/verify/{reference}` if a webhook is lost.
+4. Vendor payouts: `GET /vendors/banks` lists banks, `POST /vendors/me/paystack/recipient {bankCode, accountNumber}` resolves the account name and registers a transfer recipient. The payout run then calls `POST /transfer`. In Paystack settings turn off "Confirm transfers before sending", otherwise transfers stop at OTP and the payout rolls back.

@@ -14,7 +14,7 @@ export const config = {
   paymentProvider: (e.PAYMENT_PROVIDER ?? 'fake') as 'paystack' | 'stripe' | 'fake',
   stripeSecret: e.STRIPE_SECRET_KEY ?? '', stripeWebhookSecret: e.STRIPE_WEBHOOK_SECRET ?? '', stripeCurrency: e.STRIPE_CURRENCY ?? 'usd',
   elasticUrl: e.ELASTICSEARCH_URL ?? '', elasticApiKey: e.ELASTICSEARCH_API_KEY ?? '',
-  paystackSecret: e.PAYSTACK_SECRET_KEY ?? '', paystackWebhookSecret: e.PAYSTACK_WEBHOOK_SECRET ?? e.PAYSTACK_SECRET_KEY ?? '',
+  paystackSecret: e.PAYSTACK_SECRET_KEY ?? '', paystackCurrency: e.PAYSTACK_CURRENCY ?? 'NGN', paystackWebhookSecret: e.PAYSTACK_WEBHOOK_SECRET ?? e.PAYSTACK_SECRET_KEY ?? '',
   fakeSecret: e.FAKE_PROVIDER_SECRET ?? 'fake-secret',
   smtpUrl: e.SMTP_URL ?? 'smtp://localhost:1125',
   webOrigin: e.WEB_ORIGIN ?? 'http://localhost:3100',

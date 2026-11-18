@@ -24,8 +24,8 @@ export class PayoutsService {
         if (!ins.length) return;
         // Real money first, inside the transaction: if the transfer throws, the payout row and ledger entry roll back, and the
         // Idempotency-Key makes a retry safe. Vendors without a connected account are settled in the ledger only (manual bank payout).
-        const [vp] = await tx.$queryRaw<{ stripe_account_id: string | null }[]>`SELECT stripe_account_id FROM vendor_profiles WHERE id = ${vendor_id}::uuid`;
-        if (this.pay.transferToVendor && vp?.stripe_account_id) await this.pay.transferToVendor({ accountId: vp.stripe_account_id, amountKobo: b.available_kobo, idempotencyKey: `payout:${ins[0].id}`, description: `Oja payout ${runKey}` });
+        const [vp] = await tx.$queryRaw<{ payout_account_id: string | null }[]>`SELECT payout_account_id FROM vendor_profiles WHERE id = ${vendor_id}::uuid`;
+        if (this.pay.transferToVendor && vp?.payout_account_id) await this.pay.transferToVendor({ accountId: vp.payout_account_id, amountKobo: b.available_kobo, idempotencyKey: `payout:${ins[0].id}`, description: `Oja payout ${runKey}` });
         await this.ledger.payout(tx, `payout:${ins[0].id}`, vendor_id, b.available_kobo);
         paid++; total += b.available_kobo;
       }, { timeout: 30_000 });

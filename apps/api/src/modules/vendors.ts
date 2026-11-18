@@ -7,7 +7,7 @@ import { Storage } from '../infra/storage';
 import { Jobs } from '../infra/jobs';
 import type IORedis from 'ioredis';
 import { JOBS, PAYMENT, REDIS, STORAGE } from '../tokens';
-import { StripeProvider, type PaymentProvider } from '@oja/payment-provider';
+import { PaystackProvider, StripeProvider, type PaymentProvider } from '@oja/payment-provider';
 import { config } from '../config';
 import { AuthUser, CurrentUser, Roles, signAccess } from '../common/auth';
 import { Problem, Z } from '../common/http';
@@ -25,12 +25,34 @@ export class VendorsService {
     if (!(this.pay instanceof StripeProvider)) throw new Problem(HttpStatus.CONFLICT, 'Conflict', 'Stripe is not the active payment provider');
     const v = await this.db.vendorProfile.findUnique({ where: { userId: user.id } });
     if (!v) throw new Problem(HttpStatus.FORBIDDEN, 'Forbidden', 'no vendor profile');
-    let accountId = v.stripeAccountId;
+    let accountId = v.payoutAccountId;
     if (!accountId) {
       accountId = (await this.pay.createConnectedAccount(user.email)).accountId;
-      await this.db.vendorProfile.update({ where: { id: v.id }, data: { stripeAccountId: accountId } });
+      await this.db.vendorProfile.update({ where: { id: v.id }, data: { payoutAccountId: accountId } });
     }
     return this.pay.onboardingLink(accountId, `${config.webOrigin}/seller`);
+  }
+
+  /** Banks the vendor can be paid into (Paystack /bank). */
+  async banks() {
+    if (!(this.pay instanceof PaystackProvider)) throw new Problem(HttpStatus.CONFLICT, 'Conflict', 'Paystack is not the active payment provider');
+    return this.pay.listBanks();
+  }
+
+  /**
+   * Paystack payout setup: resolve the account holder at the bank (GET /bank/resolve), then register a transfer recipient
+   * (POST /transferrecipient). The recipient code is what the payout run transfers to.
+   */
+  async paystackRecipient(user: AuthUser, bankCode: string, accountNumber: string) {
+    if (!(this.pay instanceof PaystackProvider)) throw new Problem(HttpStatus.CONFLICT, 'Conflict', 'Paystack is not the active payment provider');
+    const v = await this.db.vendorProfile.findUnique({ where: { userId: user.id } });
+    if (!v) throw new Problem(HttpStatus.FORBIDDEN, 'Forbidden', 'no vendor profile');
+    let name: string;
+    try { name = (await this.pay.resolveAccount(accountNumber, bankCode)).accountName; }
+    catch { throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'Account not found', 'the bank could not verify this account number'); }
+    const { recipientCode } = await this.pay.createRecipient({ name, accountNumber, bankCode });
+    await this.db.vendorProfile.update({ where: { id: v.id }, data: { payoutAccountId: recipientCode } });
+    return { accountName: name };
   }
 
   async apply(user: AuthUser, storeName: string) {
@@ -94,6 +116,9 @@ export class VendorsService {
 export class VendorsController {
   constructor(private v: VendorsService) {}
   @Post('vendors/apply') apply(@CurrentUser() u: AuthUser, @Body(Z(z.object({ storeName: z.string().min(2).max(80) }))) b: any) { return this.v.apply(u, b.storeName); }
+  @Roles('VENDOR') @Get('vendors/banks') banks() { return this.v.banks(); }
+  @Roles('VENDOR') @Post('vendors/me/paystack/recipient')
+  recipient(@CurrentUser() u: AuthUser, @Body(Z(z.object({ bankCode: z.string().min(2).max(10), accountNumber: z.string().regex(/^\d{10}$/) }))) b: any) { return this.v.paystackRecipient(u, b.bankCode, b.accountNumber); }
   @Roles('VENDOR') @Post('vendors/me/stripe/onboard') stripe(@CurrentUser() u: AuthUser) { return this.v.stripeOnboard(u); }
   @Roles('VENDOR') @Get('vendors/me') me(@CurrentUser() u: AuthUser) { return this.v.me(u.id); }
   @Roles('VENDOR') @Patch('vendors/me/kyc')

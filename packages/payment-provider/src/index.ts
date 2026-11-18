@@ -28,18 +28,32 @@ export function estimateFee(amountKobo: bigint): bigint {
   return fee > 200000n ? 200000n : fee;
 }
 
+/**
+ * Paystack, https://api.paystack.co (endpoints from Paystack's OpenAPI spec):
+ *  POST /transaction/initialize   {email, amount (integer, smallest unit), currency, reference, callback_url, metadata}
+ *  GET  /transaction/verify/{reference}
+ *  POST /transferrecipient        {type: "nuban", name, account_number, bank_code, currency}  -> data.recipient_code
+ *  POST /transfer                 {source: "balance", amount, recipient, reference, reason}   -> data.status, data.transfer_code
+ *  GET  /bank?country=&currency=   and   GET /bank/resolve?account_number=&bank_code=
+ * Webhook: header x-paystack-signature = hex HMAC-SHA512 of the raw body keyed with the secret key; retried by Paystack until a 2xx.
+ * Test keys only (sk_test_...) unless PAYSTACK_ALLOW_LIVE=1.
+ */
 export class PaystackProvider implements PaymentProvider {
   readonly name = 'paystack';
-  constructor(private secret: string, private webhookSecret = secret, private base = 'https://api.paystack.co') {}
+  constructor(private secret: string, private webhookSecret = secret, private currency = 'NGN', private base = 'https://api.paystack.co') {
+    if (!secret.startsWith('sk_test_') && process.env.PAYSTACK_ALLOW_LIVE !== '1') throw new Error('PaystackProvider only accepts test keys (sk_test_...)');
+    if (!['NGN', 'GHS', 'KES', 'ZAR', 'USD'].includes(currency)) throw new Error(`unsupported Paystack currency ${currency}`);
+  }
   private async call(path: string, init?: RequestInit) {
     const r = await fetch(this.base + path, { ...init, headers: { Authorization: `Bearer ${this.secret}`, 'Content-Type': 'application/json' } });
-    if (!r.ok) throw new Error(`paystack ${path} ${r.status}`);
-    return (await r.json()) as any;
+    const j = (await r.json().catch(() => ({}))) as any;
+    if (!r.ok || j.status === false) throw new Error(`paystack ${path} ${r.status}: ${j.message ?? ''}`);
+    return j;
   }
   async initialize(a: { reference: string; amountKobo: bigint; email: string; callbackUrl?: string }) {
     const j = await this.call('/transaction/initialize', {
       method: 'POST',
-      body: JSON.stringify({ reference: a.reference, amount: a.amountKobo.toString(), email: a.email, callback_url: a.callbackUrl }),
+      body: JSON.stringify({ reference: a.reference, amount: Number(a.amountKobo), currency: this.currency, email: a.email, callback_url: a.callbackUrl, metadata: { orderId: a.reference } }),
     });
     return { reference: a.reference, authorizationUrl: j.data.authorization_url as string };
   }
@@ -54,6 +68,28 @@ export class PaystackProvider implements PaymentProvider {
   async verify(reference: string) {
     const j = await this.call('/transaction/verify/' + encodeURIComponent(reference));
     return { paid: j.data.status === 'success', amountKobo: BigInt(j.data.amount), feeKobo: BigInt(j.data.fees ?? 0) };
+  }
+  /** Banks that can receive transfers, for the vendor payout form. */
+  async listBanks(country = 'nigeria') {
+    const j = await this.call(`/bank?country=${encodeURIComponent(country)}&currency=${this.currency}&perPage=100`);
+    return (j.data as any[]).filter((b) => b.active && !b.is_deleted).map((b) => ({ name: b.name as string, code: b.code as string }));
+  }
+  /** Looks the account holder name up at the bank, so a vendor cannot register a typo'd account. */
+  async resolveAccount(accountNumber: string, bankCode: string) {
+    const j = await this.call(`/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`);
+    return { accountName: j.data.account_name as string };
+  }
+  async createRecipient(a: { name: string; accountNumber: string; bankCode: string }) {
+    const j = await this.call('/transferrecipient', { method: 'POST', body: JSON.stringify({ type: 'nuban', name: a.name, account_number: a.accountNumber, bank_code: a.bankCode, currency: this.currency }) });
+    return { recipientCode: j.data.recipient_code as string };
+  }
+  /** Pay a vendor their net earnings. The reference doubles as the idempotency key: Paystack rejects a duplicate reference. */
+  async transferToVendor(a: { accountId: string; amountKobo: bigint; idempotencyKey: string; description?: string }) {
+    const reference = a.idempotencyKey.toLowerCase().replace(/[^a-z0-9_-]/g, '-').padEnd(16, '0'); // spec: lowercase alphanumeric, "-" "_" only, min 16
+    const j = await this.call('/transfer', { method: 'POST', body: JSON.stringify({ source: 'balance', amount: Number(a.amountKobo), recipient: a.accountId, reference, reason: a.description ?? 'Oja Market payout' }) });
+    // "otp" means the account still requires OTP approval for transfers: not paid, so fail and let the payout transaction roll back
+    if (j.data.status === 'otp') throw new Error('paystack transfer needs OTP approval: disable "Confirm transfers before sending" in the Paystack dashboard');
+    return { transferId: j.data.transfer_code as string };
   }
 }
 

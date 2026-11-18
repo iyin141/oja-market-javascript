@@ -42,7 +42,7 @@ class OpsController {
 
 function paymentProvider(): PaymentProvider {
   if (config.paymentProvider === 'stripe') return new StripeProvider(config.stripeSecret, config.stripeWebhookSecret, config.stripeCurrency);
-  if (config.paymentProvider === 'paystack') return new PaystackProvider(config.paystackSecret, config.paystackWebhookSecret);
+  if (config.paymentProvider === 'paystack') return new PaystackProvider(config.paystackSecret, config.paystackWebhookSecret, config.paystackCurrency);
   if (process.env.NODE_ENV === 'production') throw new Error('PAYMENT_PROVIDER=fake is not allowed in production');
   return new FakeProvider(config.fakeSecret, config.webOrigin);
 }
