@@ -1,0 +1,52 @@
+# VM deploy overlay for the Oja Market JavaScript stack.
+# Use: docker compose -f infra/compose.yml -f infra/compose.deploy.yml --env-file infra/.env.deploy up -d --build
+# - the database is Neon (DOCKER_DATABASE_URL / DOCKER_MIGRATE_DATABASE_URL in infra/.env.deploy); postgres, elasticsearch and the caddy gateway are not started
+#   (search falls back to Postgres full text when ELASTICSEARCH_URL is empty)
+# - no host port for redis, seaweedfs and mailpit; api and web listen on 127.0.0.1 only and the host nginx publishes them under /oja-market-js and /oja-market-js-api
+# - the web app is built for the base path /oja-market-js (the compose file has no web service of its own: it is defined here)
+name: oja-js
+services:
+  postgres:
+    profiles: ["disabled"]
+  elasticsearch:
+    profiles: ["disabled"]
+  gateway:
+    profiles: ["disabled"]
+    ports: !reset []
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+  seaweedfs:
+    ports: !reset []
+    restart: unless-stopped
+  mailpit:
+    ports: !reset []
+    restart: unless-stopped
+  migrate:
+    depends_on: !reset []
+  api:
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_URL: ""
+      WEB_ORIGIN: ${OJA_WEB_ORIGIN}
+    ports: !override
+      - "127.0.0.1:${OJA_API_PORT:-7312}:4100"
+  worker:
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_URL: ""
+      WEB_ORIGIN: ${OJA_WEB_ORIGIN}
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_BASE_PATH: ${OJA_BASE_PATH:-/oja-market-js}
+        NEXT_PUBLIC_API_URL: ${OJA_PUBLIC_API_URL}
+    environment:
+      NEXT_BASE_PATH: ${OJA_BASE_PATH:-/oja-market-js}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${OJA_WEB_PORT:-7311}:3100"
+    depends_on:
+      - api
