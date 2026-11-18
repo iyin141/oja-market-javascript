@@ -1,5 +1,5 @@
 import { createHmac } from 'crypto';
-import { FakeProvider, PaystackProvider, StripeProvider, hmacSha512 } from './index';
+import { FakeProvider, PaystackProvider, StripeProvider, hmacSha512, payableEmail } from './index';
 describe('providers', () => {
   const f = new FakeProvider('s');
   it('accepts valid signature', () => {
@@ -68,5 +68,10 @@ describe('providers', () => {
       expect(calls[4].body).toMatchObject({ source: 'balance', amount: 90000, recipient: 'RCP_1' });
       expect(calls[4].body.reference).toMatch(/^[a-z0-9_-]{16,}$/);
     } finally { globalThis.fetch = orig; }
+  });
+  it('payableEmail rewrites reserved demo domains only', () => {
+    expect(payableEmail('customer@oja.test')).toBe('customer@example.com');
+    expect(payableEmail('a@learnly.local')).toBe('a@example.com');
+    expect(payableEmail('real@gmail.com')).toBe('real@gmail.com');
   });
 });

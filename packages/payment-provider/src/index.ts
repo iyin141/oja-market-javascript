@@ -38,6 +38,9 @@ export function estimateFee(amountKobo: bigint): bigint {
  * Webhook: header x-paystack-signature = hex HMAC-SHA512 of the raw body keyed with the secret key; retried by Paystack until a 2xx.
  * Test keys only (sk_test_...) unless PAYSTACK_ALLOW_LIVE=1.
  */
+/** Paystack validates the TLD, so seed/demo addresses on reserved domains (.test, .local, .invalid, .localhost, .example) are sent as example.com. Real customer emails are untouched. */
+export const payableEmail = (email: string) => (/\.(test|local|invalid|localhost|example)$/i.test(email) ? `${email.split('@')[0]}@example.com` : email);
+
 export class PaystackProvider implements PaymentProvider {
   readonly name = 'paystack';
   constructor(private secret: string, private webhookSecret = secret, private currency = 'NGN', private base = 'https://api.paystack.co') {
@@ -53,7 +56,7 @@ export class PaystackProvider implements PaymentProvider {
   async initialize(a: { reference: string; amountKobo: bigint; email: string; callbackUrl?: string }) {
     const j = await this.call('/transaction/initialize', {
       method: 'POST',
-      body: JSON.stringify({ reference: a.reference, amount: Number(a.amountKobo), currency: this.currency, email: a.email, callback_url: a.callbackUrl, metadata: { orderId: a.reference } }),
+      body: JSON.stringify({ reference: a.reference, amount: Number(a.amountKobo), currency: this.currency, email: payableEmail(a.email), callback_url: a.callbackUrl, metadata: { orderId: a.reference } }),
     });
     return { reference: a.reference, authorizationUrl: j.data.authorization_url as string };
   }
