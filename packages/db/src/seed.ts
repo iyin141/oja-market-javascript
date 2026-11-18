@@ -32,6 +32,9 @@ async function main() {
   }
   if (!(await db.commissionRule.findFirst({ where: { categoryId: null } }))) await db.commissionRule.create({ data: { categoryId: null, bps: 1000 } });
 
+  await db.coupon.upsert({ where: { code: 'WELCOME10' }, update: {}, create: { code: 'WELCOME10', kind: 'PERCENT', value: 1000n, minSubtotalKobo: 500000n } });
+  await db.coupon.upsert({ where: { code: 'FLAT5000' }, update: {}, create: { code: 'FLAT5000', kind: 'FIXED', value: 500000n, minSubtotalKobo: 2000000n, maxUses: 100 } });
+
   let n = 0;
   for (const [vi, v] of VENDORS.entries()) {
     const u = await user(v.email, v.store, 'VENDOR');
@@ -46,6 +49,6 @@ async function main() {
       await db.inventory.upsert({ where: { variantId: variant.id }, update: {}, create: { variantId: variant.id, onHand: 25 + (n % 7) * 10 } });
     }
   }
-  console.log(`seeded: 3 vendors, ${n} products, ${CATEGORIES.length} categories. Login: *@oja.test / ${PASSWORD}`);
+  console.log(`seeded: 3 vendors, ${n} products, 2 coupons (WELCOME10, FLAT5000), ${CATEGORIES.length} categories. Login: *@oja.test / ${PASSWORD}`);
 }
 main().finally(() => db.$disconnect());

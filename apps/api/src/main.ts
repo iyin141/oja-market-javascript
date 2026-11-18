@@ -24,4 +24,6 @@ async function bootstrap() {
   await app.listen(config.port, '0.0.0.0');
   log.info({ port: config.port }, 'api listening');
 }
-if (require.main === module) bootstrap();
+process.on('unhandledRejection', (e) => log.error({ err: e }, 'unhandledRejection'));
+process.on('uncaughtException', (e) => { log.fatal({ err: e }, 'uncaughtException'); process.exit(1); });
+if (require.main === module) bootstrap().catch((e) => { log.fatal({ err: e }, 'startup failed'); process.exit(1); });

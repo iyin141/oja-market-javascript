@@ -21,6 +21,7 @@ export const productCreateSchema = z.object({
 });
 export const checkoutSchema = z.object({
   paymentMethod: z.enum(['CARD', 'COD']).default('CARD'),
+  couponCode: z.string().trim().toUpperCase().min(3).max(40).optional(),
   address: z.object({ line1: z.string().min(3), city: z.string().min(2), state: z.string().min(2), phone: z.string().min(7) }).optional(),
 });
 export const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
@@ -28,3 +29,11 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const presignSchema = z.object({
   contentType: z.enum(IMAGE_TYPES), size: z.number().int().positive().max(MAX_IMAGE_BYTES), filename: z.string().max(200),
 });
+export const couponCreateSchema = z.object({
+  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,40}$/),
+  kind: z.enum(['PERCENT', 'FIXED']),
+  value: z.coerce.bigint().positive(), // PERCENT: basis points (1000 = 10%), FIXED: kobo
+  minSubtotalKobo: z.coerce.bigint().nonnegative().default(0n),
+  maxUses: z.number().int().positive().optional(),
+  expiresAt: z.coerce.date().optional(),
+}).refine((c) => c.kind !== 'PERCENT' || c.value <= 10000n, { message: 'percent coupons are basis points, max 10000' });

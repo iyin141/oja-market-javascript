@@ -1,4 +1,6 @@
-import { Body, Controller, Get, HttpStatus, Injectable, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Inject, Injectable, Post, Put, Query } from '@nestjs/common';
+import type { PaymentProvider } from '@oja/payment-provider';
+import { PAYMENT } from '../tokens';
 import { z } from 'zod';
 import { Prisma_ } from '../infra/prisma';
 import { AuthUser, CurrentUser, Roles } from '../common/auth';
@@ -7,7 +9,7 @@ import { LedgerService } from './ledger';
 
 @Injectable()
 export class PayoutsService {
-  constructor(private db: Prisma_, private ledger: LedgerService) {}
+  constructor(private db: Prisma_, private ledger: LedgerService, @Inject(PAYMENT) private pay: PaymentProvider) {}
 
   /** Idempotent per (vendor, runKey): the unique row is the guard, so re-running the same key pays nobody twice. */
   async run(runKey = new Date().toISOString().slice(0, 10)) {
@@ -20,6 +22,10 @@ export class PayoutsService {
         if (!b || b.available_kobo <= 0n) return;
         const ins = await tx.$queryRaw<{ id: string }[]>`INSERT INTO payouts (id, vendor_id, run_key, amount_kobo) VALUES (gen_random_uuid(), ${vendor_id}::uuid, ${runKey}, ${b.available_kobo}) ON CONFLICT (vendor_id, run_key) DO NOTHING RETURNING id`;
         if (!ins.length) return;
+        // Real money first, inside the transaction: if the transfer throws, the payout row and ledger entry roll back, and the
+        // Idempotency-Key makes a retry safe. Vendors without a connected account are settled in the ledger only (manual bank payout).
+        const [vp] = await tx.$queryRaw<{ stripe_account_id: string | null }[]>`SELECT stripe_account_id FROM vendor_profiles WHERE id = ${vendor_id}::uuid`;
+        if (this.pay.transferToVendor && vp?.stripe_account_id) await this.pay.transferToVendor({ accountId: vp.stripe_account_id, amountKobo: b.available_kobo, idempotencyKey: `payout:${ins[0].id}`, description: `Oja payout ${runKey}` });
         await this.ledger.payout(tx, `payout:${ins[0].id}`, vendor_id, b.available_kobo);
         paid++; total += b.available_kobo;
       }, { timeout: 30_000 });
@@ -37,6 +43,25 @@ export class AdminService {
     const [com] = await this.db.$queryRaw<any[]>`SELECT coalesce(sum(CASE direction WHEN 'CREDIT' THEN amount_kobo ELSE -amount_kobo END), 0)::bigint AS commission FROM ledger_entries WHERE account = 'platform_commission'`;
     const [counts] = await this.db.$queryRaw<any[]>`SELECT (SELECT count(*) FROM vendor_profiles WHERE status = 'KYC_SUBMITTED')::int AS pending_vendors, (SELECT count(*) FROM products WHERE status = 'REVIEW')::int AS pending_products, (SELECT count(*) FROM return_requests WHERE status = 'DISPUTED')::int AS open_disputes, (SELECT count(*) FROM vendor_profiles WHERE flagged)::int AS flagged_vendors`;
     return { gmvKobo: gmv.gmv, paidSubOrders: gmv.orders, refundedKobo: gmv.refunded, commissionKobo: com.commission, pendingVendors: counts.pending_vendors, pendingProducts: counts.pending_products, openDisputes: counts.open_disputes, flaggedVendors: counts.flagged_vendors, ledger: await this.ledger.check() };
+  }
+
+  /** Time series + leaderboards for the admin analytics page. Money is bigint kobo (serialised as strings). */
+  async analytics(days: number) {
+    const daily = await this.db.$queryRaw<any[]>`
+      SELECT to_char(d.day, 'YYYY-MM-DD') AS day, coalesce(sum(s.subtotal_kobo), 0)::bigint AS gmv_kobo, count(s.id)::int AS orders
+      FROM generate_series(current_date - (${days}::int - 1), current_date, '1 day') AS d(day)
+      LEFT JOIN sub_orders s ON s.created_at::date = d.day::date AND s.status NOT IN ('PENDING_PAYMENT','EXPIRED','CANCELLED')
+      GROUP BY d.day ORDER BY d.day`;
+    const topVendors = await this.db.$queryRaw<any[]>`
+      SELECT vp.store_name AS name, sum(s.subtotal_kobo)::bigint AS gmv_kobo, sum(s.commission_kobo)::bigint AS commission_kobo, count(*)::int AS orders
+      FROM sub_orders s JOIN vendor_profiles vp ON vp.id = s.vendor_id
+      WHERE s.status NOT IN ('PENDING_PAYMENT','EXPIRED','CANCELLED') GROUP BY vp.store_name ORDER BY gmv_kobo DESC LIMIT 5`;
+    const topProducts = await this.db.$queryRaw<any[]>`
+      SELECT oi.title, sum(oi.qty)::int AS units, sum(oi.qty * oi.unit_price_kobo)::bigint AS revenue_kobo
+      FROM order_items oi JOIN sub_orders s ON s.id = oi.sub_order_id
+      WHERE s.status NOT IN ('PENDING_PAYMENT','EXPIRED','CANCELLED') GROUP BY oi.title ORDER BY revenue_kobo DESC LIMIT 5`;
+    const [coupons] = await this.db.$queryRaw<any[]>`SELECT coalesce(sum(discount_kobo), 0)::bigint AS discount_kobo, count(*) FILTER (WHERE coupon_code IS NOT NULL)::int AS orders_with_coupon FROM orders`;
+    return { days, daily, topVendors, topProducts, coupons };
   }
 
   rules() { return this.db.commissionRule.findMany({ include: { category: { select: { name: true } } } }); }
@@ -58,6 +83,7 @@ export class AdminService {
 export class AdminController {
   constructor(private a: AdminService, private payouts: PayoutsService, private db: Prisma_) {}
   @Roles('ADMIN') @Get('admin/kpis') kpis() { return this.a.kpis(); }
+  @Roles('ADMIN') @Get('admin/analytics') analytics(@Query('days') d?: string) { return this.a.analytics(Math.min(Math.max(Number(d) || 14, 1), 90)); }
   @Roles('ADMIN') @Get('admin/commission-rules') rules() { return this.a.rules(); }
   @Roles('ADMIN') @Put('admin/commission-rules')
   setRule(@CurrentUser() u: AuthUser, @Body(Z(z.object({ categoryId: z.string().uuid().nullable(), bps: z.number().int().min(0).max(10000) }))) b: any) { return this.a.setRule(u.id, b.categoryId, b.bps); }

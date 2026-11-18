@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, HttpStatus, Injectable, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpStatus, Inject, Injectable, Param, Post, Put } from '@nestjs/common';
+import type IORedis from 'ioredis';
+import { REDIS } from '../tokens';
 import { z } from 'zod';
 import { Prisma_ } from '../infra/prisma';
 import { AuthUser, CurrentUser, Roles } from '../common/auth';
@@ -7,7 +9,12 @@ import { EFFECTIVE_PRICE_SQL } from './catalog';
 
 @Injectable()
 export class CartService {
-  constructor(private db: Prisma_) {}
+  constructor(private db: Prisma_, @Inject(REDIS) private redis: IORedis) {}
+
+  static readonly TTL_SEC = 30;
+  static key(userId: string) { return `cart:${userId}`; }
+  /** Postgres stays the source of truth (checkout reads it); Redis only caches the priced, grouped view. Every write drops the key. */
+  invalidate(userId: string) { return this.redis.del(CartService.key(userId)).catch(() => undefined); }
 
   private async cartId(userId: string) {
     const c = await this.db.cart.upsert({ where: { userId }, update: {}, create: { userId } });
@@ -16,6 +23,15 @@ export class CartService {
 
   /** Cart grouped by vendor with live prices; `priceChanged` flags drift since the item was added. */
   async get(userId: string) {
+    const hit = await this.redis.get(CartService.key(userId)).catch(() => null);
+    if (hit) return JSON.parse(hit);
+    const fresh = await this.load(userId);
+    // short TTL: prices, flash sales and stock move without touching this cart
+    await this.redis.set(CartService.key(userId), JSON.stringify(fresh), 'EX', CartService.TTL_SEC).catch(() => undefined);
+    return fresh;
+  }
+
+  private async load(userId: string) {
     const id = await this.cartId(userId);
     const rows = await this.db.$queryRawUnsafe<any[]>(
       `SELECT ci.variant_id AS "variantId", ci.qty, ci.unit_price_kobo AS "addedPriceKobo", ${EFFECTIVE_PRICE_SQL} AS "unitPriceKobo",
@@ -44,8 +60,10 @@ export class CartService {
   async add(userId: string, variantId: string, qty: number) {
     const price = await this.priceOf(variantId);
     const cartId = await this.cartId(userId);
+    await this.invalidate(userId);
     await this.db.$executeRaw`INSERT INTO cart_items (id, cart_id, variant_id, qty, unit_price_kobo) VALUES (gen_random_uuid(), ${cartId}::uuid, ${variantId}::uuid, ${qty}, ${price})
       ON CONFLICT (cart_id, variant_id) DO UPDATE SET qty = LEAST(cart_items.qty + ${qty}, 99), unit_price_kobo = ${price}`;
+    await this.invalidate(userId);
     return this.get(userId);
   }
 
@@ -54,15 +72,18 @@ export class CartService {
     const cartId = await this.cartId(userId);
     const prices = new Map<string, bigint>();
     for (const i of items.filter((i) => i.qty > 0)) prices.set(i.variantId, await this.priceOf(i.variantId));
+    await this.invalidate(userId);
     await this.db.$transaction([
       this.db.cartItem.deleteMany({ where: { cartId } }),
       this.db.cartItem.createMany({ data: items.filter((i) => i.qty > 0).map((i) => ({ cartId, variantId: i.variantId, qty: i.qty, unitPriceKobo: prices.get(i.variantId)! })) }),
     ]);
+    await this.invalidate(userId);
     return this.get(userId);
   }
 
   async remove(userId: string, variantId: string) {
     await this.db.cartItem.deleteMany({ where: { cart: { userId }, variantId } });
+    await this.invalidate(userId);
     return this.get(userId);
   }
 }

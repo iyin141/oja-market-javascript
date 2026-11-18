@@ -11,12 +11,14 @@ import { AuthUser, CurrentUser, Roles } from '../common/auth';
 import { Problem, Z, counters } from '../common/http';
 import { InventoryService } from './inventory';
 import { EFFECTIVE_PRICE_SQL } from './catalog';
+import { CouponService } from './coupons';
+import { CartService } from './cart';
 
 interface CartLine { variant_id: string; qty: number; price: bigint; product_id: string; title: string; vendor_id: string; vendor_status: string; vendor_flagged: boolean; category_id: string; product_status: string }
 
 @Injectable()
 export class CheckoutService {
-  constructor(private db: Prisma_, private inv: InventoryService, @Inject(PAYMENT) private pay: PaymentProvider, @Inject(JOBS) private jobs: Jobs) {}
+  constructor(private db: Prisma_, private inv: InventoryService, private coupons: CouponService, private cart: CartService, @Inject(PAYMENT) private pay: PaymentProvider, @Inject(JOBS) private jobs: Jobs) {}
 
   /**
    * One DB transaction: idempotency row, price recompute from DB, stock reserve, order + per-vendor sub-orders
@@ -33,10 +35,16 @@ export class CheckoutService {
       throw e;
     }
     counters.orders.inc();
+    await this.cart.invalidate(user.id);
     let authorizationUrl: string | undefined;
     if (!created.cod) {
       await this.jobs.releaseReservation(created.orderId, config.reservationTtlMin * 60_000);
-      authorizationUrl = (await this.pay.initialize({ reference: created.orderId, amountKobo: created.total, email: user.email, callbackUrl: `${config.webOrigin}/orders` })).authorizationUrl;
+      try {
+        authorizationUrl = (await this.pay.initialize({ reference: created.orderId, amountKobo: created.total, email: user.email, callbackUrl: `${config.webOrigin}/orders` })).authorizationUrl;
+      } catch (e: any) {
+        // The order and stock reservation are committed and expire by themselves; the same Idempotency-Key retries payment setup.
+        throw new Problem(HttpStatus.BAD_GATEWAY, 'Payment provider unavailable', 'you were not charged; retry with the same Idempotency-Key', { orderId: created.orderId });
+      }
     }
     const response = JSON.parse(JSON.stringify({
       orderId: created.orderId, status: created.cod ? 'AWAITING_COLLECTION' : 'PENDING_PAYMENT', totalKobo: created.total,
@@ -71,7 +79,11 @@ export class CheckoutService {
     if (bad) throw new Problem(HttpStatus.CONFLICT, 'Item unavailable', `"${bad.title}" is no longer available`);
 
     const cod = dto.paymentMethod === 'COD';
-    const total = lines.reduce((s, l) => s + l.price * BigInt(l.qty), 0n); // prices come from the DB, never the client
+    const gross = lines.reduce((s, l) => s + l.price * BigInt(l.qty), 0n); // prices come from the DB, never the client
+    const coupon = dto.couponCode ? await this.coupons.quote(tx, dto.couponCode, gross) : null;
+    const discount = coupon?.discount ?? 0n;
+    const total = gross - discount;
+    if (coupon) await this.coupons.consume(tx, coupon.code);
     if (cod) {
       if (total > config.codLimitKobo) throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'COD limit exceeded', `cash on delivery is limited to ${Money.format(config.codLimitKobo)}`);
       if (lines.some((l) => l.vendor_flagged)) throw new Problem(HttpStatus.UNPROCESSABLE_ENTITY, 'COD unavailable', 'a vendor in this cart does not accept cash on delivery');
@@ -85,18 +97,25 @@ export class CheckoutService {
     const expiresAt = new Date(Date.now() + config.reservationTtlMin * 60_000);
     await this.inv.reserve(tx, orderId, lines.map((l) => ({ variantId: l.variant_id, qty: l.qty })), expiresAt);
 
-    await tx.order.create({ data: { id: orderId, userId: user.id, totalKobo: total, paymentMethod: dto.paymentMethod, address: dto.address ?? undefined, expiresAt } });
+    await tx.order.create({ data: { id: orderId, userId: user.id, totalKobo: total, couponCode: coupon?.code, discountKobo: discount, paymentMethod: dto.paymentMethod, address: dto.address ?? undefined, expiresAt } });
     const byVendor = new Map<string, CartLine[]>();
     for (const l of lines) byVendor.set(l.vendor_id, [...(byVendor.get(l.vendor_id) ?? []), l]);
     const subs: any[] = [];
+    let discountLeft = discount, n = 0;
     for (const [vendorId, vl] of byVendor) {
-      const subtotal = vl.reduce((s, l) => s + l.price * BigInt(l.qty), 0n);
-      // Commission snapshot: per-item category rate, summed. Effective bps stored alongside for display/audit.
-      const commission = vl.reduce((s, l) => s + Money.bps(l.price * BigInt(l.qty), byCat.get(l.category_id) ?? defaultBps), 0n);
+      const sub = vl.reduce((s, l) => s + l.price * BigInt(l.qty), 0n);
+      // Coupon is shared pro rata (last vendor takes the rounding remainder); subtotal and commission are on the NET amount,
+      // so ledger, refunds and payouts stay consistent with what the customer actually paid.
+      const disc = ++n === byVendor.size ? discountLeft : Money.prorate(discount, sub, gross);
+      discountLeft -= disc;
+      const subtotal = sub - disc;
+      // Commission snapshot: per-item category rate on the gross, scaled to the net amount. Effective bps stored for display/audit.
+      const grossCommission = vl.reduce((s, l) => s + Money.bps(l.price * BigInt(l.qty), byCat.get(l.category_id) ?? defaultBps), 0n);
+      const commission = disc === 0n ? grossCommission : Money.prorate(grossCommission, subtotal, sub);
       const effBps = subtotal === 0n ? 0 : Number((commission * 10000n + subtotal / 2n) / subtotal);
       const so = await tx.subOrder.create({
         data: {
-          orderId, vendorId, subtotalKobo: subtotal, commissionBps: effBps, commissionKobo: commission, status: cod ? 'AWAITING_COLLECTION' : 'PENDING_PAYMENT',
+          orderId, vendorId, subtotalKobo: subtotal, discountKobo: disc, commissionBps: effBps, commissionKobo: commission, status: cod ? 'AWAITING_COLLECTION' : 'PENDING_PAYMENT',
           items: { create: vl.map((l) => ({ variantId: l.variant_id, productId: l.product_id, title: l.title, qty: l.qty, unitPriceKobo: l.price })) },
         },
       });

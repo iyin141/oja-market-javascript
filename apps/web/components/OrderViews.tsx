@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { apiStrict } from "@/lib/api";
+import { API_URL, apiStrict } from "@/lib/api";
 import { FIXTURE_ORDERS } from "@/lib/fixtures";
 import { formatKobo } from "@/lib/money";
 import { getToken } from "@/lib/session";
@@ -49,6 +49,16 @@ export function OrderDetail({ id }: { id: string }) {
   const [retFor, setRetFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [retErr, setRetErr] = useState("");
+  /** Fetch with the bearer token and save the blob: an <a href> would not carry the Authorization header. */
+  async function downloadInvoice() {
+    try {
+      const r = await fetch(`${API_URL}/orders/${id}/invoice`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) throw new Error(`Invoice unavailable (${r.status})`);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a"); a.href = url; a.download = `invoice-${id.slice(0, 8)}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e2) { setMsg(e2 instanceof Error ? e2.message : "Invoice failed"); }
+  }
   async function ret() {
     if (!retFor || reason.trim().length < 5) { setRetErr("Please describe the problem (at least 5 characters)."); return; }
     try { await apiStrict(`/orders/${id}/returns`, { method: "POST", token: getToken(), body: JSON.stringify({ subOrderId: retFor, reason: reason.trim() }) }); setRetErr(""); setRetFor(null); setReason(""); reload(); }
@@ -58,7 +68,7 @@ export function OrderDetail({ id }: { id: string }) {
   return (
     <>
       <Notice live={live} />
-      <PageTitle title={`Order ${order.id.slice(0, 8)}`} sub={`${order.paymentMethod === "COD" ? "Pay on delivery" : "Paid by card"} - total ${formatKobo(order.totalKobo)}`} actions={<StatusChip status={order.status} />} />
+      <PageTitle title={`Order ${order.id.slice(0, 8)}`} sub={`${order.paymentMethod === "COD" ? "Pay on delivery" : "Paid by card"} - total ${formatKobo(order.totalKobo)}`} actions={<div className="flex items-center gap-space-sm"><button className={btn.ghost} onClick={() => void downloadInvoice()}>Download invoice (PDF)</button><StatusChip status={order.status} /></div>} />
       <FormModal open={!!retFor} title="Request a return" subtitle="Tell the vendor what went wrong." submitLabel="Submit return" error={retErr} onSubmit={() => void ret()} onClose={() => { setRetFor(null); setRetErr(""); }}>
         <ModalField label="Why are you returning this item?" hint="At least 5 characters."><textarea className="modal-input" value={reason} onChange={(e) => setReason(e.target.value)} minLength={5} required /></ModalField>
       </FormModal>

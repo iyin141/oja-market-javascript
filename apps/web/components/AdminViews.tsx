@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { apiStrict } from "@/lib/api";
 import { FIXTURE_KPIS } from "@/lib/fixtures";
 import { formatKobo } from "@/lib/money";
 import { getToken } from "@/lib/session";
 import type { Kpis } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { SeriesChart, type Series } from "./Chart";
 import { ConfirmDialog } from "./interactive";
 import { btn, Column, DataTable, Icon, Notice, PageTitle, StatTile, StatusChip } from "./ui";
 
@@ -93,6 +94,49 @@ export function AdminDisputes() {
         { key: "a", header: "Amount", render: (d) => formatKobo(d.subOrder.subtotalKobo), className: "text-right" },
         { key: "b", header: "", render: (d) => <div className="flex gap-space-xs"><button className={btn.primary} onClick={() => decide(d.id, "REFUND")}>Refund customer</button><button className={btn.ghost} onClick={() => decide(d.id, "REJECT")}>Side with vendor</button></div> },
       ]} />
+    </>
+  );
+}
+
+interface Analytics {
+  days: number;
+  daily: { day: string; gmv_kobo: string; orders: number }[];
+  topVendors: { name: string; gmv_kobo: string; commission_kobo: string; orders: number }[];
+  topProducts: { title: string; units: number; revenue_kobo: string }[];
+  coupons: { discount_kobo: string; orders_with_coupon: number };
+}
+const FX_ANALYTICS: Analytics = { days: 14, daily: [], topVendors: [], topProducts: [], coupons: { discount_kobo: "0", orders_with_coupon: 0 } };
+
+/** Admin analytics page: GMV and order volume over time (Chart.js) plus vendor and product leaderboards. */
+export function AdminAnalytics() {
+  const [days, setDays] = useState(14);
+  const { data: a, live } = useApi<Analytics>(`/admin/analytics?days=${days}`, FX_ANALYTICS);
+  const labels = useMemo(() => a.daily.map((d) => d.day.slice(5)), [a.daily]);
+  const series = useMemo<Series[]>(() => [
+    { label: "GMV (NGN)", data: a.daily.map((d) => Number(BigInt(d.gmv_kobo) / 100n)), color: "#2f6fed" },
+    { label: "Orders", data: a.daily.map((d) => d.orders), color: "#e8710a", type: "line", yAxis: "y1" },
+  ], [a.daily]);
+  return (
+    <>
+      <Notice live={live} />
+      <PageTitle title="Analytics" actions={
+        <select aria-label="Period" className="border border-border-muted rounded-lg px-space-sm py-1" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+          {[7, 14, 30, 90].map((d) => <option key={d} value={d}>Last {d} days</option>)}
+        </select>} />
+      <div className="bg-surface-card rounded-xl p-space-md shadow-sm mb-space-md">
+        <SeriesChart labels={labels} series={series} ariaLabel="GMV and orders per day" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-space-md">
+        <div className="bg-surface-card rounded-xl p-space-md shadow-sm">
+          <h2 className="font-title-sm text-title-sm mb-space-sm">Top vendors</h2>
+          {a.topVendors.map((v) => <div key={v.name} className="flex justify-between py-1 font-body-sm"><span>{v.name}</span><span>{formatKobo(v.gmv_kobo)} · {v.orders} orders</span></div>)}
+        </div>
+        <div className="bg-surface-card rounded-xl p-space-md shadow-sm">
+          <h2 className="font-title-sm text-title-sm mb-space-sm">Top products</h2>
+          {a.topProducts.map((p) => <div key={p.title} className="flex justify-between py-1 font-body-sm"><span>{p.title}</span><span>{formatKobo(p.revenue_kobo)} · {p.units} sold</span></div>)}
+        </div>
+      </div>
+      <p className="mt-space-md font-body-sm text-text-secondary">Coupons: {a.coupons.orders_with_coupon} orders used a coupon, {formatKobo(a.coupons.discount_kobo)} in discounts.</p>
     </>
   );
 }

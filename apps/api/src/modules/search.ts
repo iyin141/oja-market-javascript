@@ -1,9 +1,11 @@
-import { Controller, Get, Injectable, Query } from '@nestjs/common';
+import { Controller, Get, Injectable, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { Prisma_ } from '../infra/prisma';
 import { Public } from '../common/auth';
 import { Z } from '../common/http';
 import { EFFECTIVE_PRICE_SQL, publicUrl } from './catalog';
+import { ElasticSearch } from './search-es';
+import { Roles } from '../common/auth';
 
 const q = z.object({
   q: z.string().max(100).default(''), categoryId: z.string().uuid().optional(), vendorId: z.string().uuid().optional(),
@@ -20,9 +22,17 @@ export function toTsQuery(s: string): string {
 
 @Injectable()
 export class SearchService {
-  constructor(private db: Prisma_) {}
+  constructor(private db: Prisma_, private es: ElasticSearch) {}
 
+  /** Elasticsearch when configured; any ES failure falls back to Postgres full-text so search never goes down with the index. */
   async search(p: z.infer<typeof q>) {
+    if (this.es.enabled) {
+      try { return await this.es.search(p); } catch (e: any) { console.warn('search: elasticsearch failed, using postgres:', e.message); }
+    }
+    return this.pgSearch(p);
+  }
+
+  async pgSearch(p: z.infer<typeof q>) {
     const tsq = toTsQuery(p.q);
     const has = tsq.length > 0;
     const args: unknown[] = [tsq, p.q.trim()];
@@ -69,6 +79,7 @@ export class SearchService {
 
 @Controller('search')
 export class SearchController {
-  constructor(private s: SearchService) {}
+  constructor(private s: SearchService, private es: ElasticSearch) {}
   @Public() @Get() search(@Query(Z(q)) p: any) { return this.s.search(p); }
+  @Roles('ADMIN') @Post('reindex') reindex() { return this.es.reindex(); }
 }

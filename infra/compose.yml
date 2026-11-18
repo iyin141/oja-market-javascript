@@ -18,24 +18,31 @@ services:
     ports: ["8333:8333"]
     volumes: [swdata:/data, ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro]
     healthcheck: { test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status >/dev/null || exit 1"], interval: 5s, timeout: 3s, retries: 20 }
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment: { discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m" }
+    ports: ["9200:9200"]
+    volumes: [esdata:/usr/share/elasticsearch/data]
+    healthcheck: { test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health >/dev/null || exit 1"], interval: 5s, timeout: 3s, retries: 30 }
   mailpit:
     image: axllent/mailpit:v1.20
     ports: ["1125:1025", "8125:8025"]
   migrate:
     build: { context: .., dockerfile: apps/api/Dockerfile, target: migrate }
     environment:
-      MIGRATE_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/oja
+      MIGRATE_DATABASE_URL: ${DOCKER_MIGRATE_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/oja}
     depends_on: { postgres: { condition: service_healthy } }
     restart: "no"
   api: &api
     build: { context: .., dockerfile: apps/api/Dockerfile, target: runtime }
     env_file: [../.env]
     environment: &apienv
-      DATABASE_URL: postgresql://oja_app:oja_app@postgres:5432/oja
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://oja_app:oja_app@postgres:5432/oja}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://seaweedfs:8333
       SMTP_URL: smtp://mailpit:1025
       PORT: "4100"
+      ELASTICSEARCH_URL: http://elasticsearch:9200   # unset to fall back to Postgres full-text search
     ports: ["4100:4100"]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -52,4 +59,4 @@ services:
     ports: ["8100:80"]
     volumes: [./caddy/Caddyfile:/etc/caddy/Caddyfile:ro]
     depends_on: { api: { condition: service_healthy } }
-volumes: { pgdata: {}, redisdata: {}, swdata: {} }
+volumes: { pgdata: {}, redisdata: {}, swdata: {}, esdata: {} }

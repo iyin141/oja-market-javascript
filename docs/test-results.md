@@ -7,8 +7,10 @@ Environment: Windows 11, Docker Desktop. Postgres 16, Redis 7, SeaweedFS and Mai
 | Suite | Result |
 |---|---|
 | `@oja/shared` unit | 9 / 9 |
-| `@oja/payment-provider` unit | 3 / 3 |
-| `@oja/api` integration (jest, real Postgres) | 22 / 22 |
+| `@oja/payment-provider` unit (Paystack, fake, Stripe signature + replay window) | 5 / 5 |
+| `@oja/api` integration (jest, real Postgres and Redis) | 31 / 31 |
+
+Added in the second pass: coupons (pro-rata net commission, 1 NGN floor, minimum spend, expiry, max-uses race: 6 parallel checkouts on a 2-use coupon gave exactly 2), PDF invoice (owner 200, other customer 404, admin 200), admin analytics (gap-free day series, admin only), Redis cart and `/me` cache (hit, tamper-proof read path, invalidation on write and checkout).
 
 Selected measurements from the API suite:
 
@@ -29,6 +31,7 @@ Search page (live data and facets), product page, add to cart (badge updates), s
 
 ## Not done / not measured
 
+- Elasticsearch and Stripe: code and unit tests only. The ES container and Stripe test keys were not available in the build environment, so neither path ran end to end.
 - SeaweedFS storage spike (presigned PUT with CORS, multipart, ranged GET) was not run.
 - No k6 latency runs (checkout, search p95), no payout-run test at 200 vendors, no reservation-expiry timing test, no Grafana.
 - The web app was not run through Playwright; the browser flow above was driven by hand.

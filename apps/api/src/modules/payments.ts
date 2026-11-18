@@ -99,8 +99,8 @@ export class PaymentsController {
   constructor(private p: PaymentsService) {}
 
   @Public() @HttpCode(200) @Post('webhook')
-  webhook(@Req() req: RawBodyRequest<any>, @Headers('x-paystack-signature') sig?: string) {
-    return this.p.handleWebhook(req.rawBody ?? Buffer.alloc(0), sig);
+  webhook(@Req() req: RawBodyRequest<any>, @Headers('x-paystack-signature') sig?: string, @Headers('stripe-signature') stripeSig?: string) {
+    return this.p.handleWebhook(req.rawBody ?? Buffer.alloc(0), stripeSig ?? sig);
   }
   @Roles('CUSTOMER', 'VENDOR', 'ADMIN') @HttpCode(200) @Post(':id/verify')
   verify(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.p.verify(u, id); }

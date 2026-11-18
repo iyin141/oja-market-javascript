@@ -20,6 +20,9 @@ export function CheckoutFlow() {
   const [method, setMethod] = useState<"CARD" | "COD">("CARD");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [code, setCode] = useState("");
+  const [applied, setApplied] = useState<{ code: string; discountKobo: string } | null>(null);
+  const [couponErr, setCouponErr] = useState("");
   const idem = useRef<string>(crypto.randomUUID()); // reused on retry so a double click never makes two orders
   const groups = groupByVendor(lines);
   const addrOk = addr.line1.length >= 3 && addr.city.length >= 2 && addr.state.length >= 2 && addr.phone.length >= 7;
@@ -27,6 +30,18 @@ export function CheckoutFlow() {
 
   if (!ready) return <p role="status" className="text-text-secondary">Loading...</p>;
   if (!lines.length) return <div className="bg-surface-card rounded-xl p-space-xl text-center"><p className="mb-space-sm">Your cart is empty.</p><Link href="/search" className={btn.primary}>Browse products</Link></div>;
+
+  /** Preview a coupon against the server-side cart (prices and eligibility are decided by the API, never the browser). */
+  async function applyCoupon() {
+    setCouponErr(""); setApplied(null);
+    const token = getToken();
+    if (!token) { router.push("/login?next=/checkout"); return; }
+    try {
+      await apiStrict("/cart", { method: "PUT", token, body: JSON.stringify({ items: lines.map((l) => ({ variantId: l.variantId, qty: l.qty })) }) });
+      setApplied(await apiStrict<{ code: string; discountKobo: string }>(`/coupons/${encodeURIComponent(code.trim())}/preview`, { token }));
+    } catch (e) { setCouponErr(e instanceof Error ? e.message : "Coupon could not be applied"); }
+  }
+  const discount = applied ? BigInt(applied.discountKobo) : 0n;
 
   async function place() {
     setError("");
@@ -36,7 +51,7 @@ export function CheckoutFlow() {
     try {
       await apiStrict("/cart", { method: "PUT", token, body: JSON.stringify({ items: lines.map((l) => ({ variantId: l.variantId, qty: l.qty })) }) });
       const r = await apiStrict<{ orderId: string; authorizationUrl?: string }>("/checkout", {
-        method: "POST", token, headers: { "Idempotency-Key": idem.current }, body: JSON.stringify({ paymentMethod: method, address: addr }),
+        method: "POST", token, headers: { "Idempotency-Key": idem.current }, body: JSON.stringify({ paymentMethod: method, address: addr, ...(applied ? { couponCode: applied.code } : {}) }),
       });
       clearCart();
       if (r.authorizationUrl) window.location.href = r.authorizationUrl;
@@ -94,16 +109,23 @@ export function CheckoutFlow() {
                   {g.lines.map((l) => <div key={l.variantId} className="py-space-sm flex justify-between font-body-sm text-body-sm"><span>{l.qty} x {l.title}</span><span>{formatKobo(mulKobo(l.priceKobo, l.qty))}</span></div>)}
                 </VendorGroup>
               ))}
+              <div className="flex flex-wrap items-end gap-space-sm">
+                <label className="flex flex-col gap-1 font-label-sm text-label-sm">Coupon code<input className={inputCls} value={code} onChange={(e) => setCode(e.target.value)} placeholder="WELCOME10" autoComplete="off" /></label>
+                <button type="button" className={btn.ghost} onClick={applyCoupon} disabled={code.trim().length < 3 || busy}>Apply</button>
+                {applied && <span role="status" className="font-label-md text-label-md text-status-success">{applied.code} saves {formatKobo(discount)}</span>}
+                {couponErr && <span role="alert" className="font-label-md text-label-md text-status-danger">{couponErr}</span>}
+              </div>
               {error && <p role="alert" className="text-status-danger font-label-md text-label-md">{error}</p>}
               <div className="flex justify-between"><button className={btn.ghost} onClick={() => setStep(1)} disabled={busy}>Back</button>
-                <button className={btn.primary} onClick={place} disabled={busy}>{busy ? "Placing order..." : `Place order (${formatKobo(totalKobo)})`}</button></div>
+                <button className={btn.primary} onClick={place} disabled={busy}>{busy ? "Placing order..." : `Place order (${formatKobo(totalKobo - discount)})`}</button></div>
             </div>
           )}
         </div>
         <aside className="bg-surface-card rounded-xl p-space-md shadow-sm flex flex-col gap-space-xs">
           <h2 className="font-title-sm text-title-sm">Summary</h2>
           {groups.map((g) => <div key={g.vendorId} className="flex justify-between font-body-sm text-body-sm"><span className="text-text-secondary">{g.vendorName}</span><span>{formatKobo(g.subtotal)}</span></div>)}
-          <div className="flex justify-between border-t border-border-subtle pt-space-sm font-title-sm text-title-sm"><span>Total</span><span>{formatKobo(totalKobo)}</span></div>
+          {applied && <div className="flex justify-between font-body-sm text-body-sm text-status-success"><span>Coupon {applied.code}</span><span>-{formatKobo(discount)}</span></div>}
+          <div className="flex justify-between border-t border-border-subtle pt-space-sm font-title-sm text-title-sm"><span>Total</span><span>{formatKobo(totalKobo - discount)}</span></div>
         </aside>
       </div>
     </>

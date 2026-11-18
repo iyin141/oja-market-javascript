@@ -3,6 +3,9 @@ import * as argon2 from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { loginSchema, registerSchema } from '@oja/shared';
 import { z } from 'zod';
+import type IORedis from 'ioredis';
+import { Inject } from '@nestjs/common';
+import { REDIS } from '../tokens';
 import { Prisma_ } from '../infra/prisma';
 import { RateLimiter } from '../common/ratelimit';
 import { Problem, Z } from '../common/http';
@@ -102,13 +105,23 @@ export class AuthController {
 const addressSchema = z.object({ line1: z.string().min(3), city: z.string().min(2), state: z.string().min(2), phone: z.string().min(7) });
 @Controller()
 export class UsersController {
-  constructor(private db: Prisma_) {}
+  constructor(private db: Prisma_, @Inject(REDIS) private redis: IORedis) {}
+  /** Session profile cache: the web app calls /me on every page load. 60 s TTL, dropped on profile change. */
   @Get('me') async me(@CurrentUser() u: AuthUser) {
+    const key = `me:${u.id}`;
+    const hit = await this.redis.get(key).catch(() => null);
+    if (hit) return JSON.parse(hit);
+    const out = await this.loadMe(u);
+    await this.redis.set(key, JSON.stringify(out), 'EX', 60).catch(() => undefined);
+    return out;
+  }
+  private async loadMe(u: AuthUser) {
     const r = await this.db.user.findUniqueOrThrow({ where: { id: u.id }, include: { vendor: { select: { id: true, status: true, storeName: true, slug: true } } } });
     return { id: r.id, email: r.email, name: r.name, role: r.role, vendor: r.vendor };
   }
   @Patch('me') async patch(@CurrentUser() u: AuthUser, @Body(Z(z.object({ name: z.string().min(1).max(100) }))) b: any) {
     const r = await this.db.user.update({ where: { id: u.id }, data: { name: b.name } });
+    await this.redis.del(`me:${u.id}`).catch(() => undefined);
     return { id: r.id, name: r.name };
   }
   @Get('me/addresses') addresses(@CurrentUser() u: AuthUser) { return this.db.address.findMany({ where: { userId: u.id } }); }

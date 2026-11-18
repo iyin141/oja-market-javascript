@@ -104,6 +104,7 @@ model VendorProfile {
   kycKey     String? @map("kyc_key")
   kycNote    String? @map("kyc_note")
   flagged    Boolean      @default(false)
+  stripeAccountId String? @map("stripe_account_id")
   score      Int          @default(100)
   approvedAt DateTime? @map("approved_at")
   createdAt  DateTime     @default(now()) @map("created_at")
@@ -251,6 +252,8 @@ model Order {
   id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String        @db.Uuid @map("user_id")
   totalKobo     BigInt @map("total_kobo")
+  couponCode    String? @map("coupon_code")
+  discountKobo  BigInt @default(0) @map("discount_kobo")
   paymentMethod PaymentMethod @default(CARD) @map("payment_method")
   address       Json?
   expiresAt     DateTime @map("expires_at")
@@ -268,6 +271,7 @@ model SubOrder {
   vendorId      String         @db.Uuid @map("vendor_id")
   status        SubOrderStatus @default(PENDING_PAYMENT)
   subtotalKobo  BigInt @map("subtotal_kobo")
+  discountKobo  BigInt @default(0) @map("discount_kobo")
   commissionBps Int @map("commission_bps")
   commissionKobo BigInt @map("commission_kobo")
   feeKobo       BigInt         @default(0) @map("fee_kobo")
@@ -399,4 +403,24 @@ model AuditLog {
   meta      Json?
   createdAt DateTime @default(now()) @map("created_at")
   @@map("audit_log")
+}
+
+enum CouponKind {
+  PERCENT
+  FIXED
+}
+
+/// Platform coupons. Discount is vendor-funded pro rata: sub-order subtotal and commission are computed on the net amount.
+model Coupon {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String     @unique
+  kind            CouponKind
+  value           BigInt
+  minSubtotalKobo BigInt     @default(0) @map("min_subtotal_kobo")
+  maxUses         Int?       @map("max_uses")
+  usedCount       Int        @default(0) @map("used_count")
+  expiresAt       DateTime?  @map("expires_at")
+  active          Boolean    @default(true)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  @@map("coupons")
 }

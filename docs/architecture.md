@@ -5,10 +5,11 @@ Modular monolith: one NestJS codebase runs as `api` (HTTP) and `worker` (BullMQ 
 ```mermaid
 flowchart LR
   Web[Next.js web :3100] -->|HTTPS| GW[Caddy gateway :8100]
-  PS[Paystack test mode] -->|webhook| GW
+  PS[Paystack / Stripe test mode] -->|webhook| GW
   GW --> API[api :4100]
   API --> PG[(Postgres 16)]
-  API --> R[(Redis 7)]
+  API --> R[(Redis 7: cart + session cache, rate limit, queues)]
+  API -->|index + query| ES[(Elasticsearch 8)]
   API -->|presign| S3[(SeaweedFS S3 :8333)]
   Browser -->|presigned PUT| S3
   R --> W[worker]
@@ -24,7 +25,9 @@ flowchart LR
 | auth.ts | register/login/refresh/logout (argon2id, 15 min JWT, rotating refresh with reuse detection, Redis rate limit + lockout), `/me`, addresses |
 | vendors.ts | apply, KYC (presigned PUT to the private bucket), admin approve/reject/suspend, vendor state machine |
 | catalog.ts | public catalog, vendor product CRUD, variants, image presign/confirm, product state machine, flash sales |
-| search.ts | `tsvector` + `pg_trgm` search with facets |
+| search.ts / search-es.ts | Elasticsearch search with facets, fuzzy and prefix matching (reindex every 60 s into a fresh index + alias swap); Postgres `tsvector` + `pg_trgm` fallback |
+| coupons.ts | percent/fixed coupons, atomic use count, vendor-funded pro rata |
+| invoices.ts | PDF invoice per order |
 | inventory.ts | reserve / commit / release as single conditional UPDATEs; expiry; low-stock |
 | cart.ts | cart grouped by vendor with live price drift flags |
 | checkout.ts | idempotent checkout transaction: reserve, order, per-vendor sub-orders, commission snapshot |

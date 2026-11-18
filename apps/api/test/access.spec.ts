@@ -179,6 +179,7 @@ describe('vendor onboarding -> catalog -> upload safety -> search', () => {
     const u = await mkUser(h.db);
     await request(h.server).post('/cart/items').set(bearer(u.token)).send({ variantId: p.variant.id, qty: 2 }).expect(201);
     await h.db.flashSale.create({ data: { variantId: p.variant.id, priceKobo: 60000n, startsAt: new Date(Date.now() - 1000), endsAt: new Date(Date.now() + 3600_000) } });
+    await h.redis.del(`cart:${u.id}`); // the flash sale was written straight to the DB; the cart view is cached for up to 30 s (checkout always re-prices from the DB)
     const cart = await request(h.server).get('/cart').set(bearer(u.token)).expect(200);
     expect(cart.body.groups).toHaveLength(1);
     expect(cart.body.groups[0].items[0]).toMatchObject({ unitPriceKobo: '60000', addedPriceKobo: '100000', priceChanged: true });

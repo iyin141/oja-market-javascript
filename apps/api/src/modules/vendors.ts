@@ -5,7 +5,9 @@ import { canVendorTransition } from '@oja/shared';
 import { Prisma_ } from '../infra/prisma';
 import { Storage } from '../infra/storage';
 import { Jobs } from '../infra/jobs';
-import { JOBS, STORAGE } from '../tokens';
+import type IORedis from 'ioredis';
+import { JOBS, PAYMENT, REDIS, STORAGE } from '../tokens';
+import { StripeProvider, type PaymentProvider } from '@oja/payment-provider';
 import { config } from '../config';
 import { AuthUser, CurrentUser, Roles, signAccess } from '../common/auth';
 import { Problem, Z } from '../common/http';
@@ -16,7 +18,20 @@ const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').repla
 
 @Injectable()
 export class VendorsService {
-  constructor(private db: Prisma_, @Inject(STORAGE) private storage: Storage, @Inject(JOBS) private jobs: Jobs) {}
+  constructor(private db: Prisma_, @Inject(STORAGE) private storage: Storage, @Inject(JOBS) private jobs: Jobs, @Inject(PAYMENT) private pay: PaymentProvider, @Inject(REDIS) private redis: IORedis) {}
+
+  /** Stripe Connect Express onboarding (test mode): creates the connected account once, returns a hosted onboarding link. */
+  async stripeOnboard(user: AuthUser) {
+    if (!(this.pay instanceof StripeProvider)) throw new Problem(HttpStatus.CONFLICT, 'Conflict', 'Stripe is not the active payment provider');
+    const v = await this.db.vendorProfile.findUnique({ where: { userId: user.id } });
+    if (!v) throw new Problem(HttpStatus.FORBIDDEN, 'Forbidden', 'no vendor profile');
+    let accountId = v.stripeAccountId;
+    if (!accountId) {
+      accountId = (await this.pay.createConnectedAccount(user.email)).accountId;
+      await this.db.vendorProfile.update({ where: { id: v.id }, data: { stripeAccountId: accountId } });
+    }
+    return this.pay.onboardingLink(accountId, `${config.webOrigin}/seller`);
+  }
 
   async apply(user: AuthUser, storeName: string) {
     if (await this.db.vendorProfile.findUnique({ where: { userId: user.id } })) throw new Problem(HttpStatus.CONFLICT, 'Conflict', 'already applied');
@@ -62,6 +77,7 @@ export class VendorsService {
       this.db.vendorProfile.update({ where: { id }, data: { status: to, kycNote: note ?? null, approvedAt: to === 'APPROVED' ? new Date() : v.approvedAt } }),
       this.db.auditLog.create({ data: { actorId: adminId, action: `vendor.${to.toLowerCase()}`, entity: 'vendor', entityId: id, meta: { note } } }),
     ]);
+    await this.redis.del(`me:${v.userId}`).catch(() => undefined);
     await this.jobs.notify(v.userId, `vendor.${to.toLowerCase()}`, { storeName: v.storeName, note });
     return u;
   }
@@ -78,6 +94,7 @@ export class VendorsService {
 export class VendorsController {
   constructor(private v: VendorsService) {}
   @Post('vendors/apply') apply(@CurrentUser() u: AuthUser, @Body(Z(z.object({ storeName: z.string().min(2).max(80) }))) b: any) { return this.v.apply(u, b.storeName); }
+  @Roles('VENDOR') @Post('vendors/me/stripe/onboard') stripe(@CurrentUser() u: AuthUser) { return this.v.stripeOnboard(u); }
   @Roles('VENDOR') @Get('vendors/me') me(@CurrentUser() u: AuthUser) { return this.v.me(u.id); }
   @Roles('VENDOR') @Patch('vendors/me/kyc')
   kyc(@CurrentUser() u: AuthUser, @Body(Z(z.object({ contentType: z.string().optional(), size: z.number().int().positive().optional(), docKey: z.string().optional() }))) b: any) { return this.v.kyc(u.id, b); }

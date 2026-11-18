@@ -1,7 +1,7 @@
 import { Controller, Get, Inject, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import IORedis from 'ioredis';
-import { FakeProvider, PaymentProvider, PaystackProvider } from '@oja/payment-provider';
+import { FakeProvider, PaymentProvider, PaystackProvider, StripeProvider } from '@oja/payment-provider';
 import { config } from './config';
 import { JOBS, MAILER, PAYMENT, REDIS, STORAGE } from './tokens';
 import { Prisma_ } from './infra/prisma';
@@ -22,6 +22,9 @@ import { OrderEvents, OrdersController, OrdersService } from './modules/orders';
 import { PaymentsController, PaymentsService } from './modules/payments';
 import { LedgerController, LedgerService } from './modules/ledger';
 import { AdminController, AdminService, PayoutsService } from './modules/admin';
+import { ElasticSearch } from './modules/search-es';
+import { InvoiceController, InvoiceService } from './modules/invoices';
+import { CouponController, CouponService } from './modules/coupons';
 import { ReturnsController, ReturnsService, ReviewsService } from './modules/returns';
 import { Notifier } from './modules/notifier';
 import { ImageProcessor } from './modules/images';
@@ -38,6 +41,7 @@ class OpsController {
 }
 
 function paymentProvider(): PaymentProvider {
+  if (config.paymentProvider === 'stripe') return new StripeProvider(config.stripeSecret, config.stripeWebhookSecret, config.stripeCurrency);
   if (config.paymentProvider === 'paystack') return new PaystackProvider(config.paystackSecret, config.paystackWebhookSecret);
   if (process.env.NODE_ENV === 'production') throw new Error('PAYMENT_PROVIDER=fake is not allowed in production');
   return new FakeProvider(config.fakeSecret, config.webOrigin);
@@ -45,7 +49,7 @@ function paymentProvider(): PaymentProvider {
 
 @Module({
   controllers: [OpsController, AuthController, UsersController, VendorsController, CatalogController, SearchController, InventoryController, CartController,
-    CheckoutController, OrdersController, PaymentsController, LedgerController, AdminController, ReturnsController],
+    CheckoutController, OrdersController, PaymentsController, LedgerController, AdminController, ReturnsController, CouponController, InvoiceController],
   providers: [
     Prisma_,
     { provide: REDIS, useFactory: makeRedis },
@@ -56,7 +60,7 @@ function paymentProvider(): PaymentProvider {
     { provide: RateLimiter, inject: [REDIS], useFactory: (r: IORedis) => new RateLimiter(r) },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: ProblemFilter },
-    AuthService, VendorsService, CatalogService, SearchService, InventoryService, CartService, CheckoutService, OrderEvents, OrdersService,
+    AuthService, VendorsService, CatalogService, ElasticSearch, SearchService, InventoryService, CartService, CheckoutService, CouponService, InvoiceService, OrderEvents, OrdersService,
     PaymentsService, LedgerService, PayoutsService, AdminService, ReturnsService, ReviewsService, Notifier, ImageProcessor,
   ],
 })
